@@ -13,7 +13,7 @@ interface TopbarProps {
 	beatmapPath: string | undefined;
 }
 
-const Topbar: React.FC<TopbarProps> = ({ beatmapPath: songPath }) => {
+const Topbar: React.FC<TopbarProps> = ({ beatmapPath }) => {
 	const navigate = useNavigate();
 	
 	return (
@@ -26,7 +26,7 @@ const Topbar: React.FC<TopbarProps> = ({ beatmapPath: songPath }) => {
 				</DropdownContainer>
 			</div>
 			<div className={'info'}>
-				<span>{songPath}</span>
+				<span>{beatmapPath}</span>
 			</div>
 		</div>
 	);

@@ -32,13 +32,6 @@ export interface BeatmapInfo {
 	renderedHoldObjects: number;
 }
 
-export function calculateActualNoteSpeed(scrollSpeed: number, bpm: number, sliderVelocity: number): number {
-	const bps = bpm / 60;
-	const totalScrollSpeed = sliderVelocity * scrollSpeed;
-	const pixelsPerSecond = totalScrollSpeed * bps;
-	return Math.max(pixelsPerSecond * 25, 0);
-}
-
 export function useHitsound(normalUrl: string, clapUrl: string, finishUrl: string, whistleUrl: string) {
 	const audioContextRef = useRef<AudioContext | null>(null);
 	const buffersRef = useRef<{ [key in HitSound]?: AudioBuffer }>({});
@@ -99,6 +92,13 @@ export function isDifficultyPoint(controlPoint: ControlPoint): controlPoint is D
 	return controlPoint.pointType === ControlPointType.DifficultyPoint;
 }
 
+export function calculateActualNoteSpeed(scrollSpeed: number, bpm: number, sliderVelocity: number): number {
+	const bps = bpm / 60;
+	const totalScrollSpeed = sliderVelocity * scrollSpeed;
+	const pixelsPerSecond = totalScrollSpeed * bps;
+	return Math.max(pixelsPerSecond * 25, 0);
+}
+
 export function calculateYPosition(
 	timestamp: number,
 	targetMillisecond: number,
@@ -111,12 +111,10 @@ export function calculateYPosition(
 	nextDifficulties: Array<DifficultyPoint>,
 ): number {
 	const movementHeight = laneHeight * (hitPosition / 480);
-	
 	let remainingTime = targetMillisecond - timestamp;
 	let distanceTravelled = 0;
 	let nextTimingPointIndex = 0;
 	let nextDifficultyPointIndex = 0;
-	
 	while (true) {
 		const currentSpeed = calculateActualNoteSpeed(scrollSpeed, bpm, sliderVelocity) * 0.001;
 		const nextTimingPoint = nextTimings[nextTimingPointIndex] as TimingPoint | undefined;
