@@ -1,0 +1,78 @@
+.maniaEditor {
+	display: grid;
+	grid-template-columns: 2.5fr 1fr;
+	grid-template-rows: 1fr 1.4fr 0.2fr;
+	height: 100%;
+	gap: 0;
+	
+	> .section {
+		border: 0 solid black;
+		padding: 10px;
+	}
+	
+	> .section.s1 {
+		display: flex;
+		flex-direction: row;
+		justify-content: center;
+		gap: 64px;
+		grid-column: 1;
+		grid-row: span 2;
+		padding: 0;
+		border-width: 1px 1px 0 0;
+		position: relative;
+		background-color: hsl(0, 0%, 30%);
+		
+		> .hitObjectEditor {
+			display: flex;
+			flex-direction: row;
+			z-index: 2;
+			
+			&.edit {
+				border: 1px solid white;
+				border-width: 0 1px;
+			}
+		}
+		
+		> .imgBackground, > .videoBackground {
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			object-fit: cover;
+			object-position: center;
+		}
+	}
+	
+	> .section.s2 {
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+		grid-column: 2;
+		grid-row: 1;
+		border-width: 1px 0 1px 0;
+		font-family: 'JetBrains Mono', monospace;
+		
+		> .scrollSpeedChanger, .beatSnapDivisorChanger {
+			display: flex;
+			flex-direction: row;
+			gap: 10px;
+			
+			> input {
+				flex-grow: 1;
+			}
+		}
+	}
+	
+	> .section.s3 {
+		grid-column: 2;
+		grid-row: 2;
+	}
+	
+	> .section.s4 {
+		grid-column: 1 / span 2;
+		grid-row: 3;
+		border-width: 1px 0 0 0;
+		font-family: 'JetBrains Mono', monospace;
+	}
+}

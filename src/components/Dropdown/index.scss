@@ -1,0 +1,33 @@
+.dropdown {
+	position: relative;
+	
+	> .button {
+		padding: 0 24px;
+		width: 100%;
+		height: 100%;
+	}
+	
+	> .contents {
+		width: max-content;
+		display: none;
+		flex-direction: column;
+		gap: 0;
+		position: absolute;
+		z-index: 2;
+		
+		> .item, > .dropdown {
+			text-align: left;
+		}
+	}
+	
+	&.north > .contents { left: 0%; bottom: 100%; }
+	&.east > .contents  { left: 100%; top: 0%; }
+	&.south > .contents { left: 0%; top: 100%; }
+	&.west > .contents  { right: 100%; top: 0%; }
+	
+	&.open {
+		> .contents {
+			display: flex;
+		}
+	}
+}

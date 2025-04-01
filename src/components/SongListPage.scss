@@ -1,0 +1,158 @@
+.appHeader {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: -10px;
+	background-color: hsl(333, 83%, 66%);
+	color: white;
+	position: absolute;
+	left: 0;
+	top: 0;
+	right: 0;
+	height: 40px;
+}
+
+main.songListPage {
+	padding-top: 64px;
+	height: calc(100% - 74px);
+}
+
+.copyrightNotice {
+	right: 5px;
+	top: 45px;
+}
+
+.appOptions {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	
+	> legend {
+		font-weight: bold;
+	}
+}
+
+.infoContainer {
+	display: flex;
+	flex-direction: row;
+	gap: 10px;
+	
+	> input {
+		flex-grow: 1;
+	}
+}
+
+.songsList {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	flex-grow: 1;
+	overflow-y: hidden;
+	
+	> legend {
+		font-weight: bold;
+	}
+	
+	> .info {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		
+		> div {
+			display: flex;
+			flex-direction: row;
+			gap: 10px;
+			
+			> input, button {
+				flex-grow: 1;
+			}
+		}
+	}
+	
+	> .list {
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
+		flex-grow: 1;
+		overflow-y: auto;
+		
+		> .songItem {
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+			
+			> legend {
+				font-size: 2rem;
+				text-align: center;
+				font-weight: bold;
+			}
+			
+			> .difficulties {
+				display: flex;
+				flex-direction: column;
+				gap: 10px;
+				padding: 10px 0;
+				background-color: hsl(0, 0%, 30%);
+				position: relative;
+				
+				> .difficulty {
+					display: flex;
+					flex-direction: row;
+					gap: 30px;
+					border: 2px dashed black;
+					border-left: none;
+					padding: 10px;
+					width: 35%;
+					margin: 0;
+					text-align: right;
+					background-color: hsla(0, 0%, 100%, 0.5);
+					backdrop-filter: blur(20px);
+					
+					> .info {
+						flex-grow: 3;
+						display: flex;
+						flex-direction: column;
+						justify-content: space-between;
+						gap: 10px;
+					}
+					
+					> .buttons {
+						flex-grow: 1;
+						display: flex;
+						flex-direction: column;
+						justify-content: space-between;
+						gap: 10px;
+					}
+				}
+				
+				> .background {
+					position: absolute;
+					left: 0;
+					top: 0;
+					width: 100%;
+					height: 100%;
+					object-fit: cover;
+				}
+			}
+		}
+		
+		> .loading {
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+			margin-top: 20px;
+			
+			> .progressLabel {
+				text-align: center;
+			}
+			
+			> .loadingGif {
+				background-color: hsl(212, 80%, 70%);
+				mask-image: url("@/assets/loading.gif");
+				mask-size: cover;
+				filter: none;
+				margin: 0 auto;
+			}
+		}
+	}
+}

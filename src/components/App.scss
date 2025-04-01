@@ -1,0 +1,78 @@
+@font-face {
+	font-family: 'Torus';
+	src: url("../assets/Torus - Regular.ttf");
+}
+
+@font-face {
+	font-family: 'Torus Bold';
+	src: url("../assets/Torus - Bold.ttf");
+}
+
+@font-face {
+	font-family: 'JetBrains Mono';
+	src: url("../assets/JetBrains Mono.ttf");
+}
+
+body {
+	padding: 0;
+	margin: 0;
+	height: 100vh;
+	overflow-y: hidden;
+}
+
+p, h1, h2, h3, h4, h5, h6, a {
+	margin: 0;
+}
+
+p, h1, h2, h3, h4, h5, h6, legend, span {
+	cursor: default;
+}
+
+a {
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+#root {
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	height: 100%;
+	font-family: 'Torus', sans-serif;
+}
+
+main {
+	display: flex;
+	flex-direction: column;
+	flex-grow: 1;
+	gap: 10px;
+	margin: 0;
+	padding: 10px;
+	height: calc(100% - 20px);
+}
+
+.loadingBar {
+	margin: 0;
+	background-color: hsl(0, 0%, 60%);
+	height: 10px;
+	position: relative;
+	border-radius: 100px;
+	
+	&::after {
+		border-radius: 100px;
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		right: calc(100% - var(--progress));
+		display: block;
+		background-color: hsl(212, 80%, 70%);
+	}
+}
+
+.loadingGif {
+	filter: brightness(0);
+	width: calc(2rem * (825 / 256));
+	height: 2rem;
+}
