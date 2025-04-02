@@ -34,8 +34,6 @@ const ManiaEditor: React.FC<ManiaEditorProps> = ({ beatmap, sectionRef }) => {
 	
 	useEffect(() => {
 		const keyListener = (event: KeyboardEvent) => {
-			event.preventDefault();
-			
 			switch (event.code) {
 				case 'F1': {
 					if (event.ctrlKey) {
@@ -78,6 +76,8 @@ const ManiaEditor: React.FC<ManiaEditorProps> = ({ beatmap, sectionRef }) => {
 					return;
 				}
 			}
+			
+			event.preventDefault();
 		};
 		
 		const savedUserOptions = Storage.get<UserOptions>('userOptions');
