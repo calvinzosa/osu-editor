@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { memo, useState } from 'react';
 
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
@@ -29,4 +29,4 @@ const OpenExplorer: React.FC<OpenExplorerProps> = ({ filePath }) => {
 	);
 };
 
-export default OpenExplorer;
+export default memo(OpenExplorer);

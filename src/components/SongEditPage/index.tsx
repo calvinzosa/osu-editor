@@ -1,11 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { readFile } from '@tauri-apps/plugin-fs';
 
-import './SongEditPage.scss';
-
-import DropdownContainer, { DropdownItem } from './Dropdown';
-import Editor from './Editor';
+import './index.scss';
+import DropdownContainer, { DropdownItem } from '@/components/Dropdown';
+import Editor from '@/components/Editor';
 
 import { beatmapDecoder, initializeBeatmap, OsuBeatmap } from '@/utils/Beatmap';
 
@@ -32,26 +31,26 @@ const Topbar: React.FC<TopbarProps> = ({ beatmapPath }) => {
 	);
 };
 
-const SongEditPage: React.FC = () => {
+const BeatmapEditPage: React.FC = () => {
 	const [beatmap, setBeatmap] = useState<OsuBeatmap | null>(null);
 	const location = useLocation();
 	const navigate = useNavigate();
 	
+	const difficultyPath = location.state?.difficultyPath as string | undefined;
 	const beatmapPath = location.state?.beatmapPath as string | undefined;
-	const songPath = location.state?.songPath as string | undefined;
 	
 	useEffect(() => {
-		if (!beatmapPath || !songPath) {
+		if (!difficultyPath || !beatmapPath) {
 			navigate('/');
 			return;
 		}
 		
-		console.log(`Beatmap path: ${beatmapPath}`);
+		console.log(`Beatmap path: ${difficultyPath}`);
 		
-		readFile(beatmapPath)
+		readFile(difficultyPath)
 			.then((contents) => {
 				const beatmap = beatmapDecoder.decodeFromBuffer(contents) as OsuBeatmap;
-				initializeBeatmap(beatmap, beatmapPath, songPath);
+				initializeBeatmap(beatmap, difficultyPath, beatmapPath);
 				setBeatmap(beatmap);
 			})
 			.catch(() => navigate('/'));
@@ -59,12 +58,12 @@ const SongEditPage: React.FC = () => {
 	
 	return (
 		<>
-			<Topbar beatmapPath={beatmapPath} />
-			<main className={'songEditPage'}>
+			<Topbar beatmapPath={difficultyPath} />
+			<main className={'beatmapEditPage'}>
 				<Editor beatmap={beatmap} />
 			</main>
 		</>
 	);
 };
 
-export default SongEditPage;
+export default BeatmapEditPage;

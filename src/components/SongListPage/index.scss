@@ -2,7 +2,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	margin-bottom: -10px;
+	font-size: 2rem;
 	background-color: hsl(333, 83%, 66%);
 	color: white;
 	position: absolute;
@@ -10,9 +10,18 @@
 	top: 0;
 	right: 0;
 	height: 40px;
+	user-select: none;
 }
 
-main.songListPage {
+.appVersion {
+	text-align: center;
+	margin-top: -20px;
+	color: hsl(0, 0%, 30%);
+	font-weight: bold;
+	user-select: none;
+}
+
+main.beatmapListPage {
 	padding-top: 64px;
 	height: calc(100% - 74px);
 }
@@ -38,11 +47,12 @@ main.songListPage {
 	gap: 10px;
 	
 	> input {
+		font-family: 'JetBrains Mono';
 		flex-grow: 1;
 	}
 }
 
-.songsList {
+.beatmapList {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
@@ -76,7 +86,7 @@ main.songListPage {
 		flex-grow: 1;
 		overflow-y: auto;
 		
-		> .songItem {
+		> .beatmapItem {
 			display: flex;
 			flex-direction: column;
 			gap: 10px;

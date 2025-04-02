@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 const FPSCounter: React.FC = () => {
 	const [fps, setFPS] = useState<number>(0);

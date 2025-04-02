@@ -4,4 +4,8 @@ button {
 	&:disabled {
 		cursor: default;
 	}
+	
+	&[title] {
+		cursor: help;
+	}
 }

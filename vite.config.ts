@@ -15,6 +15,7 @@ export default defineConfig(async () => ({
 		assetsInlineLimit: 0,
 	},
 	server: {
+		sourcemapIgnoreList: () => true,
 		port: 1420,
 		strictPort: true,
 		host: host || false,

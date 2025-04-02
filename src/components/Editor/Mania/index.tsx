@@ -1,14 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 import './index.scss';
-import FPSCounter from '../FPSCounter';
 import Section1 from './Section1';
 import Section2 from './Section2';
+import Section3 from './Section3';
+import Section4 from './Section4';
 
 import { DefaultUserOptions, UserOptions } from '@/utils/Types';
-import { BeatmapInfo, OsuBeatmap } from '@/utils/Beatmap';
+import { OsuBeatmap } from '@/utils/Beatmap';
 import { Storage } from '@/utils/LocalStorage';
 import { joinPaths } from '@/utils/File';
 
@@ -18,11 +19,10 @@ interface ManiaEditorProps {
 }
 
 const ManiaEditor: React.FC<ManiaEditorProps> = ({ beatmap, sectionRef }) => {
+	const [renderedHitObjects, setRenderedHitObjects] = useState<{ normal: number, long: number }>({ normal: 0, long: 0 });
 	const [timestamp, setTimestamp] = useState<number>(0);
 	const [isPlaying, setPlaying] = useState<boolean>(false);
 	const [userOptions, setUserOptions] = useState<UserOptions>(DefaultUserOptions);
-	const [beatmapInfo, setBeatmapInfo] = useState<BeatmapInfo>({ bpm: 60, sliderVelocity: 1, renderedNormalObjects: 0, renderedHoldObjects: 0 });
-	const [keysPerSecond, setKeysPerSecond] = useState<number>(0);
 	const [saveOptions, setSaveOptions] = useState<boolean>(false);
 	
 	const musicRef = useRef<HTMLAudioElement | null>(null);
@@ -37,21 +37,24 @@ const ManiaEditor: React.FC<ManiaEditorProps> = ({ beatmap, sectionRef }) => {
 			}
 		};
 		
-		const savedUserOptions = Storage.get('userOptions');
+		const savedUserOptions = Storage.get<UserOptions>('userOptions');
 		if (savedUserOptions !== null) {
 			try {
-				setUserOptions((prev) => ({ ...prev, ...JSON.parse(savedUserOptions) }));
+				setUserOptions({ ...DefaultUserOptions, ...savedUserOptions });
 			} catch (err) { }
 		}
 		
+		const interval = setInterval(() => {
+			if ('mediaSession' in navigator) {
+				navigator.mediaSession.metadata = null;
+				navigator.mediaSession.playbackState = 'none';
+			}
+		}, 500);
+		
 		setSaveOptions(true);
-		
-		if ('mediaSession' in navigator) {
-			navigator.mediaSession.playbackState = 'none';
-		}
-		
 		window.addEventListener('keypress', keyPressListener);
 		return () => {
+			clearInterval(interval);
 			window.removeEventListener('keypress', keyPressListener);
 		}
 	}, []);
@@ -61,7 +64,7 @@ const ManiaEditor: React.FC<ManiaEditorProps> = ({ beatmap, sectionRef }) => {
 			return;
 		}
 		
-		Storage.set('userOptions', JSON.stringify(userOptions));
+		Storage.set('userOptions', userOptions);
 	}, [userOptions, saveOptions]);
 	
 	return (
@@ -77,30 +80,21 @@ const ManiaEditor: React.FC<ManiaEditorProps> = ({ beatmap, sectionRef }) => {
 					setPlaying={setPlaying}
 					timestamp={timestamp}
 					setTimestamp={setTimestamp}
-					setBeatmapInfo={setBeatmapInfo}
-					setKeysPerSecond={setKeysPerSecond}
+					setRenderedHitObjects={setRenderedHitObjects}
 				/>
 				<Section2
-					{...beatmapInfo}
-					keysPerSecond={keysPerSecond}
+					beatmap={beatmap}
+					timestamp={timestamp}
+					renderedHitObjects={renderedHitObjects}
+				/>
+				<Section3
 					userOptions={userOptions}
 					setUserOptions={setUserOptions}
 				/>
-				<div className={'section s3'}>
-				</div>
-				<div className={'section s4'}>
-					<p>
-						Timestamp:&nbsp;
-						{Math.floor(timestamp / 60_000).toString().padStart(2, '0')}:
-						{Math.floor(timestamp % 60_000 / 1_000).toString().padStart(2, '0')}.
-						{Math.round(timestamp % 1_000).toString().padStart(3, '0')}
-						&nbsp;/&nbsp;
-						{Math.floor((musicRef.current?.duration ?? 0) / 60).toString().padStart(2, '0')}:
-						{Math.floor((musicRef.current?.duration ?? 0) % 60).toString().padStart(2, '0')}.
-						{Math.round((musicRef.current?.duration ?? 0) % 1 * 1_000).toString().padStart(3, '0')}
-					</p>
-					<FPSCounter />
-				</div>
+				<Section4
+					timestamp={timestamp}
+					musicRef={musicRef}
+				/>
 			</div>
 		</>
 	);

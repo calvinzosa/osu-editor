@@ -20,19 +20,6 @@ body {
 	overflow-y: hidden;
 }
 
-p, h1, h2, h3, h4, h5, h6, a {
-	margin: 0;
-}
-
-p, h1, h2, h3, h4, h5, h6, legend, span {
-	cursor: default;
-}
-
-a {
-	text-decoration: underline;
-	cursor: pointer;
-}
-
 #root {
 	display: flex;
 	flex-direction: column;
@@ -49,6 +36,31 @@ main {
 	margin: 0;
 	padding: 10px;
 	height: calc(100% - 20px);
+}
+
+p, h1, h2, h3, h4, h5, h6, a {
+	margin: 0;
+}
+
+p, h1, h2, h3, h4, h5, h6, legend, span {
+	cursor: default;
+}
+
+p[title] {
+	cursor: help;
+}
+
+button, input {
+	font-family: 'Torus';
+}
+
+a {
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+img {
+	user-select: none;
 }
 
 .loadingBar {

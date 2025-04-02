@@ -6,34 +6,34 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import * as dialog from '@tauri-apps/plugin-dialog';
 import * as path from '@tauri-apps/api/path';
 
-import './SongListPage.scss';
-
+import './index.scss';
 import OpenExplorer from '@/components/Button/OpenExplorer';
 
 import { GameMode, OsuBeatmap, processBeatmaps } from '@/utils/Beatmap';
-import { getExtension } from '@/utils/File';
+import { dirName, getExtension, joinPaths } from '@/utils/File';
+import { AppName, AppVersion } from '@/utils/Constants';
 import { Storage } from '@/utils/LocalStorage';
 
-interface SongItemProps {
-	songPath: string;
+interface BeatmapItemProps {
+	beatmapPath: string;
 	difficulties: Array<OsuBeatmap>;
 }
 
-const SongItem: React.FC<SongItemProps> = ({ songPath, difficulties }) => {
+const BeatmapItem: React.FC<BeatmapItemProps> = ({ beatmapPath, difficulties }) => {
 	const navigate = useNavigate();
 	
 	const [loadAudio, setLoadAudio] = useState<boolean>(false);
 	const [headerBeatmap] = useState<OsuBeatmap>(difficulties[0]);
 	const [legend] = useState<string>(`${headerBeatmap.metadata.titleUnicode || headerBeatmap.metadata.title} by ${headerBeatmap.metadata.artistUnicode || headerBeatmap.metadata.artist} // ${headerBeatmap.metadata.creator}`);
-	const [audioPath] = useState<string>(songPath + '\\' + headerBeatmap.general.audioFilename);
+	const [audioPath] = useState<string>(beatmapPath + '\\' + headerBeatmap.general.audioFilename);
 	const [backgroundImage] = useState<string | null>(
-		headerBeatmap.events.backgroundPath !== null ? convertFileSrc(songPath + '\\' + headerBeatmap.events.backgroundPath) : null
+		headerBeatmap.events.backgroundPath !== null ? convertFileSrc(beatmapPath + '\\' + headerBeatmap.events.backgroundPath) : null
 	);
 	
 	return (
 		<>
 			<legend>{legend}</legend>
-			<OpenExplorer filePath={songPath} />
+			<OpenExplorer filePath={beatmapPath} />
 			<button onClick={() => setLoadAudio((loadAudio) => !loadAudio)}>{loadAudio ? 'Hide audio' : 'Show audio'}</button>
 			{loadAudio && (
 				<audio controls>
@@ -59,7 +59,7 @@ const SongItem: React.FC<SongItemProps> = ({ songPath, difficulties }) => {
 								</p>
 							</div>
 							<div className={'buttons'}>
-								<button onClick={() => navigate('/edit', { state: { beatmapPath: beatmap.filePath, songPath } })}>Edit</button>
+								<button onClick={() => navigate('/edit', { state: { difficultyPath: beatmap.filePath, beatmapPath } })}>Edit</button>
 							</div>
 						</fieldset>
 					);
@@ -69,17 +69,16 @@ const SongItem: React.FC<SongItemProps> = ({ songPath, difficulties }) => {
 	);
 };
 
-interface SongListProps {
-	songsPath: string | null;
-	songList: Record<string, Array<OsuBeatmap>> | null;
-	filteredSongs: Record<string, Array<OsuBeatmap>> | null;
+interface BeatmapListProps {
+	beatmapsPath: string | null;
+	beatmapList: Record<string, Array<OsuBeatmap>> | null;
+	filteredBeatmaps: Record<string, Array<OsuBeatmap>> | null;
 	loadingProgress: number;
-	totalSongs: number;
+	totalBeatmaps: number;
 }
 
-const SongList: React.FC<SongListProps> = ({ songsPath, songList, filteredSongs, loadingProgress, totalSongs }) => {
+const BeatmapList: React.FC<BeatmapListProps> = ({ beatmapsPath, beatmapList, filteredBeatmaps, loadingProgress, totalBeatmaps }) => {
 	const listRef = useRef<HTMLFieldSetElement | null>(null);
-	
 	const seenBeatmapIds = new Set<string>();
 	
 	useEffect(() => {
@@ -89,18 +88,18 @@ const SongList: React.FC<SongListProps> = ({ songsPath, songList, filteredSongs,
 		}
 		
 		list.scrollTop = 0;
-	}, [listRef, filteredSongs]);
+	}, [listRef, filteredBeatmaps]);
 	
 	return (
 		<fieldset className={'list'} ref={listRef}>
-			{songsPath === null || songList === null ? (
+			{beatmapsPath === null || beatmapList === null ? (
 				<div className={'loading'}>
-					<p className={'progressLabel'}>Loaded {loadingProgress} out of {totalSongs} songs from {songsPath} ({(loadingProgress / totalSongs * 100).toFixed(2)}%)</p>
+					<p className={'progressLabel'}>Loaded {loadingProgress} out of {totalBeatmaps} beatmaps from {beatmapsPath} ({(loadingProgress / totalBeatmaps * 100).toFixed(2)}%)</p>
 					<div className={'loadingGif'} />
-					<div className={'loadingBar'} style={{'--progress': `${loadingProgress / totalSongs * 100}%`} as any}></div>
+					<div className={'loadingBar'} style={{'--progress': `${loadingProgress / totalBeatmaps * 100}%`} as any}></div>
 				</div>
-			) : Object.entries(filteredSongs ?? {})
-			.sort(([, beatmap1], [, beatmap2]) => beatmap1[0].metadata.title.localeCompare(beatmap2[0].metadata.title)).map(([songPath, difficulties]) => {
+			) : Object.entries(filteredBeatmaps ?? {})
+			.sort(([, beatmap1], [, beatmap2]) => beatmap1[0].metadata.title.localeCompare(beatmap2[0].metadata.title)).map(([beatmapPath, difficulties]) => {
 				const headerBeatmap = difficulties[0];
 				if (seenBeatmapIds.has(headerBeatmap.tempId)) {
 					return undefined;
@@ -108,8 +107,8 @@ const SongList: React.FC<SongListProps> = ({ songsPath, songList, filteredSongs,
 				
 				seenBeatmapIds.add(headerBeatmap.tempId);
 				return (
-					<fieldset className={'songItem'} key={headerBeatmap.tempId}>
-						<SongItem songPath={songPath} difficulties={difficulties} />
+					<fieldset className={'beatmapItem'} key={headerBeatmap.tempId}>
+						<BeatmapItem beatmapPath={beatmapPath} difficulties={difficulties} />
 					</fieldset>
 				);
 			})}
@@ -117,42 +116,43 @@ const SongList: React.FC<SongListProps> = ({ songsPath, songList, filteredSongs,
 	);
 };
 
-const SongListPage: React.FC = () => {
+const BeatmapListPage: React.FC = () => {
 	const [osuPath, setOsuPath] = useState<string | null>(null);
-	const [songsPath, setSongsPath] = useState<string | null>(null);
-	const [songList, setSongList] = useState<Record<string, Array<OsuBeatmap>> | null>(null);
+	const [beatmapsPath, setBeatmapsPath] = useState<string | null>(null);
+	const [beatmapList, setBeatmapList] = useState<Record<string, Array<OsuBeatmap>> | null>(null);
 	
 	const [loadingProgress, setLoadingProgress] = useState<number>(0);
-	const [totalSongs, setTotalSongs] = useState<number>(0);
+	const [totalBeatmaps, setTotalBeatmaps] = useState<number>(0);
 	const [query, setQuery] = useState<string>('');
 	
 	const checkOsuPath = async (osuPath: string) => {
 		setOsuPath(null);
-		setSongList(null);
+		setBeatmapList(null);
 		
-		const doesExist = await exists(await path.join(osuPath, 'osu!.exe'));
+		const doesExist = await exists(joinPaths(osuPath, 'osu!.exe'));
 		
 		if (doesExist) {
 			const entries = await readDir(osuPath);
-			let songsPath: string | null = null;
+			let beatmapsPath: string | null = null;
 			
 			for (const entry of entries) {
 				if (entry.isDirectory && entry.name === 'Songs') {
-					songsPath = await path.join(osuPath, entry.name);
+					beatmapsPath = joinPaths(osuPath, entry.name);
+					break;
 				}
 			}
 			
-			if (songsPath !== null) {
+			if (beatmapsPath !== null) {
 				Storage.set('osuPath', osuPath);
 				setOsuPath(osuPath);
-				setSongsPath(songsPath);
-				processBeatmaps(songsPath, setSongList, setLoadingProgress, setTotalSongs);
+				setBeatmapsPath(beatmapsPath);
+				processBeatmaps(beatmapsPath, setBeatmapList, setLoadingProgress, setTotalBeatmaps);
 			}
 		}
 	};
 	
 	useEffect(() => {
-		const savedOsuPath = Storage.get('osuPath');
+		const savedOsuPath = Storage.get<string>('osuPath');
 		if (savedOsuPath !== null) {
 			checkOsuPath(savedOsuPath);
 		} else {
@@ -161,25 +161,25 @@ const SongListPage: React.FC = () => {
 				.then(checkOsuPath);
 		}
 		
-		const savedQuery = Storage.get('songQuery');
+		const savedQuery = Storage.get<string>('beatmapQuery');
 		if (savedQuery !== null) {
 			setQuery(savedQuery);
 		}
 	}, []);
 	
 	useEffect(() => {
-		setTotalSongs(Object.keys(songList ?? {}).length);
-	}, [songList]);
+		setTotalBeatmaps(Object.keys(beatmapList ?? {}).length);
+	}, [beatmapList]);
 	
-	const filteredSongs = useMemo(() => {
-		if (songList === null) {
+	const filteredBeatmaps = useMemo(() => {
+		if (beatmapList === null) {
 			return null;
 		}
 		
 		const queryLowercase = query.toLowerCase();
-		const filteredSongs: NonNullable<typeof songList> = {};
+		const filteredBeatmaps: NonNullable<typeof beatmapList> = {};
 		
-		Object.entries(songList).forEach(([songPath, beatmaps]) => {
+		Object.entries(beatmapList).forEach(([beatmapPath, beatmaps]) => {
 			const matchesQuery = beatmaps.some((beatmap) => {
 				const searchFields = [
 					beatmap.metadata.title,
@@ -194,20 +194,21 @@ const SongListPage: React.FC = () => {
 			});
 			
 			if (matchesQuery) {
-				filteredSongs[songPath] = beatmaps;
+				filteredBeatmaps[beatmapPath] = beatmaps;
 			}
 		});
 		
-		return filteredSongs;
-	}, [query, songList]);
+		return filteredBeatmaps;
+	}, [query, beatmapList]);
 	
 	return (
-		<main className={'songListPage'}>
-			<h1 className={'appHeader'}>osu!editor</h1>
+		<main className={'beatmapListPage'}>
+			<h1 className={'appHeader'}>{AppName}</h1>
+			<p className={'appVersion'}>{AppVersion}</p>
 			<fieldset className={'appOptions'}>
 				<legend>App Options</legend>
 				<div className={'infoContainer'}>
-					<span>osu! app data directory: </span>
+					<span>osu! App Data Path: </span>
 					<input className={'code'} value={osuPath ?? '<Unset>'} readOnly />
 					<button
 						onClick={async () => {
@@ -222,8 +223,7 @@ const SongListPage: React.FC = () => {
 							});
 							
 							if (directory !== null) {
-								const osuPath = await path.dirname(directory);
-								
+								const osuPath = dirName(directory);
 								checkOsuPath(osuPath);
 							}
 						}}
@@ -242,30 +242,30 @@ const SongListPage: React.FC = () => {
 					<OpenExplorer filePath={osuPath} />
 				</div>
 				<div className={'infoContainer'}>
-					<span>Songs directory: </span>
-					<input className={'code'} value={songsPath ?? '<Unset>'} readOnly />
-					<OpenExplorer filePath={songsPath} />
+					<span>Beatmaps Path: </span>
+					<input className={'code'} value={beatmapsPath ?? '<Unset>'} readOnly />
+					<OpenExplorer filePath={beatmapsPath} />
 				</div>
 			</fieldset>
-			<fieldset className={'songsList'}>
-				<legend>Song List</legend>
+			<fieldset className={'beatmapList'}>
+				<legend>Beatmap List</legend>
 				<div className={'info'}>
 					<div className={'refresh'}>
 						<button
-							disabled={songsPath === null || songList === null}
+							disabled={beatmapsPath === null || beatmapList === null}
 							onClick={() => {
-								if (songsPath !== null) {
-									processBeatmaps(songsPath, setSongList, setLoadingProgress, setTotalSongs);
+								if (beatmapsPath !== null) {
+									processBeatmaps(beatmapsPath, setBeatmapList, setLoadingProgress, setTotalBeatmaps);
 								}
 							}}
 						>
-							Refresh songs
+							Refresh beatmaps
 						</button>
 					</div>
 					<div className={'search'}>
 						<span>
-							Search {totalSongs} song{totalSongs !== 1 ? 's' : ''}
-							{query.length > 0 ? ` (${Object.keys(filteredSongs ?? {}).length} shown)` : ''}
+							Search {totalBeatmaps} beatmap{totalBeatmaps !== 1 ? 's' : ''}
+							{query.length > 0 ? ` (${Object.keys(filteredBeatmaps ?? {}).length} shown)` : ''}
 							:
 						</span>
 						<input
@@ -274,22 +274,22 @@ const SongListPage: React.FC = () => {
 								setQuery(query);
 								Storage.set('savedQuery', query);
 							}}
-							disabled={songsPath === null || songList === null}
+							disabled={beatmapsPath === null || beatmapList === null}
 							type={'text'}
 							value={query}
 						/>
 					</div>
 				</div>
-				<SongList
-					songsPath={songsPath}
-					songList={songList}
-					filteredSongs={filteredSongs}
+				<BeatmapList
+					beatmapsPath={beatmapsPath}
+					beatmapList={beatmapList}
+					filteredBeatmaps={filteredBeatmaps}
 					loadingProgress={loadingProgress}
-					totalSongs={totalSongs}
+					totalBeatmaps={totalBeatmaps}
 				/>
 			</fieldset>
 		</main>
 	);
 }
 
-export default SongListPage;
+export default BeatmapListPage;

@@ -1,69 +1,54 @@
-import React from 'react';
+import { OsuBeatmap } from '@/utils/Beatmap';
 
-import { BeatmapInfo } from '@/utils/Beatmap';
-import { ReactSet, DefaultUserOptions, UserOptions } from '@/utils/Types';
-
-interface Section2Props extends BeatmapInfo {
-	keysPerSecond: number;
-	userOptions: UserOptions;
-	setUserOptions: ReactSet<UserOptions>;
+interface Section2Props {
+	beatmap: OsuBeatmap;
+	timestamp: number;
+	renderedHitObjects: BeatmapInfo['renderedHitObjects'];
 }
 
-const Section2: React.FC<Section2Props> = ({ bpm, sliderVelocity, renderedNormalObjects, renderedHoldObjects, userOptions, setUserOptions, keysPerSecond }) => {
+interface BeatmapInfo {
+	bpm: number;
+	sliderVelocity: number;
+	keysPerSecond: number;
+	kiai: boolean;
+	renderedHitObjects: {
+		normal: number;
+		long: number;
+	};
+}
+
+const Section2: React.FC<Section2Props> = ({ beatmap, timestamp, renderedHitObjects }) => {
+	const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
+	const bpm = currentTimingPoint?.bpmUnlimited ?? 60;
+	
+	const currentDifficultyPoint = beatmap.controlPoints.difficultyPointAt(timestamp);
+	const currentEffectPoint = beatmap.controlPoints.effectPointAt(timestamp);
+	const sliderVelocity = currentDifficultyPoint?.sliderVelocityUnlimited ?? 1;
+	const kiai = currentEffectPoint.kiai;
+	
+	let keysPerSecond = 0;
+	for (const hitObject of beatmap.hitObjects) {
+		if (hitObject.startTime > timestamp) {
+			break;
+		}
+		
+		if (hitObject.startTime > timestamp - 1_000) {
+			keysPerSecond++;
+		}
+	}
+	
+	const beatmapInfo: BeatmapInfo = { bpm, sliderVelocity, keysPerSecond, renderedHitObjects, kiai };
+	
 	return (
 		<div className={'section s2'}>
-			<p>BPM: {bpm.toFixed(2)}</p>
-			<p>SliderVelocity: {sliderVelocity.toFixed(2)}x</p>
-			<p>Rendered HitObjects: {renderedNormalObjects.toString().padStart(3, '.')} Normal / {renderedHoldObjects.toString().padStart(3, '.')} Hold</p>
-			<p>Keys/s: {keysPerSecond.toString().padStart(3, '.')}</p>
-			<div className={'scrollSpeedChanger'}>
-				<p>ScrollSpeed: {userOptions.scrollSpeed}</p>
-				<input
-					type={'range'}
-					min={1}
-					max={40}
-					step={1}
-					value={userOptions.scrollSpeed}
-					onChange={(event) => {
-						const scrollSpeed = parseInt(event.currentTarget.value);
-						if (isNaN(scrollSpeed) || !isFinite(scrollSpeed)) {
-							return;
-						}
-						
-						setUserOptions((userOptions) => ({ ...userOptions, scrollSpeed: scrollSpeed }));
-					}}
-				/>
-				<button
-					disabled={userOptions.scrollSpeed === DefaultUserOptions.scrollSpeed}
-					onClick={() => setUserOptions((userOptions) => ({ ...userOptions, scrollSpeed: DefaultUserOptions.scrollSpeed }))}
-				>
-					Reset to default ({DefaultUserOptions.scrollSpeed})
-				</button>
-			</div>
-			<div className={'beatSnapDivisorChanger'}>
-				<p>BeatSnapDivisor: {userOptions.beatSnapDivisor}</p>
-				<input
-					type={'range'}
-					min={1}
-					max={16}
-					step={1}
-					value={userOptions.beatSnapDivisor}
-					onChange={(event) => {
-						const beatSnapDivisor = parseInt(event.currentTarget.value);
-						if (isNaN(beatSnapDivisor) || !isFinite(beatSnapDivisor)) {
-							return;
-						}
-						
-						setUserOptions((userOptions) => ({ ...userOptions, beatSnapDivisor: beatSnapDivisor }));
-					}}
-				/>
-				<button
-					disabled={userOptions.beatSnapDivisor === DefaultUserOptions.beatSnapDivisor}
-					onClick={() => setUserOptions((userOptions) => ({ ...userOptions, beatSnapDivisor: DefaultUserOptions.beatSnapDivisor }))}
-				>
-					Reset to default ({DefaultUserOptions.beatSnapDivisor})
-				</button>
-			</div>
+			<p>BPM: {beatmapInfo.bpm.toFixed(2)}</p>
+			<p>SliderVelocity: {beatmapInfo.sliderVelocity.toFixed(2)}x</p>
+			<p>
+				Rendered HitObjects:&nbsp;
+				{beatmapInfo.renderedHitObjects.normal.toString().padStart(3, '.')} Normal / {beatmapInfo.renderedHitObjects.long.toString().padStart(3, '.')} Long
+			</p>
+			<p>Keys/s: {beatmapInfo.keysPerSecond.toString().padStart(3, '.')}</p>
+			<p>KiaiMode: {beatmapInfo.kiai ? 'true' : 'false'}</p>
 		</div>
 	);
 };

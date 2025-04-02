@@ -1,21 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { DifficultyPoint, HitObject, HitSound, HitType, TimingPoint } from 'osu-classes';
-import { HoldableObject } from 'osu-parsers';
-
 import { exists, readDir } from '@tauri-apps/plugin-fs';
+import { DifficultyPoint, HitObject, HitSound, HitType, TimingPoint } from 'osu-classes';
+import { HoldableObject, HittableObject } from 'osu-parsers';
 
-import { clamp, reverseArr } from '@/utils';
-import { BeatmapInfo, calculateYPosition, calculateYPositionEditor, OsuBeatmap, useHitsound } from '@/utils/Beatmap';
+import { clamp, intToBits } from '@/utils';
+import { yPositionFromTimestamp, yPositionFromTimestampEditor, OsuBeatmap, useHitsound, millisecondFromYPositionEditor } from '@/utils/Beatmap';
 import { getExtension, getFileName, joinPaths } from '@/utils/File';
-import { ReactSet, UserOptions } from '@/utils/Types';
+import { EditMode, ReactSet, UserOptions } from '@/utils/Types';
 
 import normalHitSound from '@/assets/normal-hitnormal.ogg';
 import clapHitSound from '@/assets/normal-hitclap.ogg';
 import finishHitSound from '@/assets/normal-hitfinish.ogg';
 import whistleHitSound from '@/assets/normal-hitwhistle.ogg';
 
+import editorModeSelectionIcon from '@/assets/EditorIcon_ModeSelection.png';
+import editorModeNormalIcon from '@/assets/EditorIcon_ModeNormalNote.png';
+import editorModeLongIcon from '@/assets/EditorIcon_ModeLongNote.png';
 import maniaNote1Src from '@/assets/mania-note1.png';
 import maniaLongNote1Src from '@/assets/mania-note1L-0.png';
 import maniaNote2Src from '@/assets/mania-note2.png';
@@ -47,44 +49,45 @@ function renderPreviewContext(
 	nextTimings: Array<TimingPoint>,
 	nextDiffs: Array<DifficultyPoint>,
 	nextHitObjects: Array<HitObject>,
-) {
+): [number, number] {
 	const offscreenCanvas = offscreenContext.canvas;
-	
 	const circleRadius = Math.round(laneWidth / 2);
 	const circleX = circleRadius;
-	const outlineWidth = 10;
+	const outlineWidth = Math.round(laneWidth * 0.15);
 	const halfOutline = Math.round(outlineWidth / 2);
-	const judgementRadius = circleRadius - halfOutline;
+	const receptorRadius = circleRadius - halfOutline;
+	const snap = 60_000 / bpm;
+	const totalLines = Math.min(Math.ceil((timestamp + 5_000) / snap), 400);
 	
 	offscreenContext.fillStyle = 'hsl(0, 0%, 0%)';
 	offscreenContext.fillRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
-	
-	offscreenContext.strokeStyle = 'hsla(0, 0%, 100%, 0.5)';
-	offscreenContext.lineWidth = outlineWidth;
+	offscreenContext.fillStyle = 'hsl(0, 0%, 50%)';
 	offscreenContext.beginPath();
-	offscreenContext.ellipse(circleX, Math.round(laneHeight * (hitPosition / 480)), judgementRadius, judgementRadius, 0, 0, Math.PI * 2);
-	offscreenContext.closePath();
-	offscreenContext.stroke();
-	
-	const snap = 60_000 / bpm;
-	const totalLines = Math.ceil((timestamp + 5_000) / snap);
-	
-	offscreenContext.fillStyle = 'hsla(0, 0%, 100%, 0.5)';
 	for (let i = 0; i < totalLines; i++) {
 		const lineTime = i * snap;
 		
-		const yPosition = calculateYPosition(timestamp, lineTime, scrollSpeed, bpm, sliderVelocity, laneHeight, hitPosition, nextTimings, nextDiffs);
+		const yPosition = yPositionFromTimestamp(timestamp, lineTime, scrollSpeed, bpm, sliderVelocity, laneHeight, hitPosition, nextTimings, nextDiffs);
 		if (yPosition <= 0) {
 			break;
 		}
 		
 		if (yPosition <= laneHeight) {
-			offscreenContext.fillRect(0, yPosition, laneWidth, 2);
+			offscreenContext.rect(0, yPosition, laneWidth, 2);
 		}
 	}
 	
+	offscreenContext.closePath();
+	offscreenContext.fill();
+	
+	offscreenContext.strokeStyle = 'hsl(0, 0%, 50%)';
+	offscreenContext.lineWidth = outlineWidth;
+	offscreenContext.beginPath();
+	offscreenContext.ellipse(circleX, Math.round(laneHeight * (hitPosition / 480)), receptorRadius, receptorRadius, 0, 0, Math.PI * 2);
+	offscreenContext.closePath();
+	offscreenContext.stroke();
+	
 	let renderedNormalObjects = 0;
-	let renderedHoldObjects = 0;
+	let renderedLongObjects = 0;
 	
 	for (const hitObject of nextHitObjects) {
 		const objectColumn = Math.floor(hitObject.startX * columnCount / 512);
@@ -98,7 +101,7 @@ function renderPreviewContext(
 			body: 'hsl(229, 44%, 63%)',
 		};
 		
-		if (columnCount === 4 && (objectColumn === 1 || objectColumn === 2)) {
+		if (columnCount === 4 && (columnIndex === 1 || columnIndex === 2)) {
 			colors.normal = 'hsl(0, 0%, 78%)';
 			colors.head = 'hsl(0, 0%, 78%)';
 			colors.body = 'hsl(0, 0%, 63%)';
@@ -109,16 +112,28 @@ function renderPreviewContext(
 				continue;
 			}
 			
-			const yPosition = calculateYPosition(timestamp, hitObject.startTime, scrollSpeed, bpm, sliderVelocity, laneHeight, hitPosition, nextTimings, nextDiffs);
-			if (yPosition >= 0) {
-				offscreenContext.fillStyle = colors.normal;
-				offscreenContext.beginPath();
-				offscreenContext.ellipse(circleX, yPosition, circleRadius, circleRadius, 0, 0, Math.PI * 2);
-				offscreenContext.closePath();
-				offscreenContext.fill();
-				
-				renderedNormalObjects++;
+			const yPosition = yPositionFromTimestamp(
+				timestamp,
+				hitObject.startTime,
+				scrollSpeed,
+				bpm,
+				sliderVelocity,
+				laneHeight,
+				hitPosition,
+				nextTimings,
+				nextDiffs,
+			);
+			
+			if (yPosition < 0) {
+				continue;
 			}
+			
+			offscreenContext.fillStyle = colors.normal;
+			offscreenContext.beginPath();
+			offscreenContext.ellipse(circleX, yPosition, circleRadius, circleRadius, 0, 0, Math.PI * 2);
+			offscreenContext.closePath();
+			offscreenContext.fill();
+			renderedNormalObjects++;
 		} else if ((hitObject.hitType & HitType.Hold) !== 0) {
 			const holdObject = hitObject as HoldableObject;
 			if (holdObject.endTime < timestamp) {
@@ -127,32 +142,58 @@ function renderPreviewContext(
 			
 			const yPositionHead = Math.min(
 				laneHeight * (hitPosition / 480),
-				calculateYPosition(timestamp, holdObject.startTime, scrollSpeed, bpm, sliderVelocity, laneHeight, hitPosition, nextTimings, nextDiffs),
+				yPositionFromTimestamp(
+					timestamp,
+					holdObject.startTime,
+					scrollSpeed,
+					bpm,
+					sliderVelocity,
+					laneHeight,
+					hitPosition,
+					nextTimings,
+					nextDiffs,
+				),
 			);
 			
-			const yPositionTail = calculateYPosition(timestamp, holdObject.endTime, scrollSpeed, bpm, sliderVelocity, laneHeight, hitPosition, nextTimings, nextDiffs);
-			if (yPositionHead >= 0) {
-				const gap = 10;
-				
-				offscreenContext.fillStyle = colors.body;
-				offscreenContext.beginPath();
-				offscreenContext.ellipse(circleX, yPositionTail, circleRadius - gap, circleRadius - gap, 0, Math.PI, Math.PI * 2);
-				offscreenContext.rect(gap, yPositionTail, laneWidth - gap * 2, yPositionHead - yPositionTail);
-				offscreenContext.closePath();
-				offscreenContext.fill();
-				
-				offscreenContext.fillStyle = colors.head;
-				offscreenContext.beginPath();
-				offscreenContext.ellipse(circleX, yPositionHead, circleRadius, circleRadius, 0, 0, Math.PI * 2);
-				offscreenContext.closePath();
-				offscreenContext.fill();
-				
-				renderedHoldObjects++;
+			const yPositionTail = yPositionFromTimestamp(
+				timestamp,
+				holdObject.endTime,
+				scrollSpeed,
+				bpm,
+				sliderVelocity,
+				laneHeight,
+				hitPosition,
+				nextTimings,
+				nextDiffs,
+			);
+			
+			if (yPositionHead < 0) {
+				continue;
 			}
+			
+			const bodyGap = laneWidth * 0.15;
+			offscreenContext.fillStyle = colors.body;
+			offscreenContext.beginPath();
+			if (yPositionTail >= 0) {
+				offscreenContext.ellipse(circleX, yPositionTail, circleRadius - bodyGap, circleRadius - bodyGap, 0, Math.PI, Math.PI * 2);
+				offscreenContext.rect(bodyGap, yPositionTail, laneWidth - bodyGap * 2, yPositionHead - yPositionTail);
+			} else {
+				offscreenContext.rect(bodyGap, 0, laneWidth - bodyGap * 2, yPositionHead);
+			}
+			offscreenContext.closePath();
+			offscreenContext.fill();
+			
+			offscreenContext.fillStyle = colors.head;
+			offscreenContext.beginPath();
+			offscreenContext.ellipse(circleX, yPositionHead, circleRadius, circleRadius, 0, 0, Math.PI * 2);
+			offscreenContext.closePath();
+			offscreenContext.fill();
+			
+			renderedLongObjects++;
 		}
 	}
 	
-	return [renderedNormalObjects, renderedHoldObjects];
+	return [renderedNormalObjects, renderedLongObjects];
 }
 
 function renderEditContext(
@@ -161,16 +202,23 @@ function renderEditContext(
 	laneHeight: number,
 	hitPosition: number,
 	timestamp: number,
-	columnCount: number,
 	columnIndex: number,
-	scrollSpeed: number,
 	nextHitObjects: Array<HitObject>,
 	beatmap: OsuBeatmap,
 	userOptions: UserOptions,
-) {
+	canvas: HTMLCanvasElement,
+	mouseX: number,
+	mouseY: number,
+	mode: EditMode,
+	dragStartPosition: [number, number] | null,
+	currentSelectedHitObjects: Set<HitObject> | null,
+): Set<HitObject> {
+	const scrollSpeed = userOptions.scrollSpeed;
+	const beatSnapDivisor = userOptions.beatSnapDivisor;
+	const columnCount = beatmap.difficulty.circleSize;
 	const offscreenCanvas = offscreenContext.canvas;
 	
-	const barHeight = 32;
+	const barHeight = Math.round(laneWidth * (maniaNote1.height / maniaNote1.width));
 	const barX = 0;
 	const fontColor = 'hsl(0, 0%, 100%)';
 	const fontOutlineColor = 'hsl(0, 0%, 0%)';
@@ -204,80 +252,92 @@ function renderEditContext(
 	offscreenContext.fillStyle = 'hsl(84, 100%, 59%)';
 	offscreenContext.fillRect(0, Math.round(laneHeight * (hitPosition / 480)), laneWidth, 9);
 	
-	const timingPoints = beatmap.controlPoints.timingPoints;
-	const beatSnapDivisor = userOptions.beatSnapDivisor;
-	let bpm = 60;
-	let timeSignature = 4;
-	let startingPoint = 0;
-	
-	if (timingPoints.length > 0) {
-		bpm = timingPoints[0].bpmUnlimited;
-		timeSignature = timingPoints[0].timeSignature;
-	}
-	
-	for (const timingPoint of reverseArr(timingPoints)) {
-		if (timingPoint.startTime <= timestamp) {
-			bpm = timingPoint.bpmUnlimited;
-			timeSignature = timingPoint.timeSignature;
-			startingPoint = timingPoint.startTime;
-			break;
-		}
-	}
+	const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
+	const bpm = currentTimingPoint.bpmUnlimited;
+	const timeSignature = currentTimingPoint.timeSignature;
+	const startingPoint = currentTimingPoint.startTime < timestamp ? currentTimingPoint.startTime : 0;
 	
 	offscreenContext.fillStyle = 'hsl(0, 0%, 74%)';
 	
 	let beatStep = 60_000 / bpm;
 	let lineIndex = 0;
+	offscreenContext.beginPath();
 	while (true) {
 		const lineTime = startingPoint + lineIndex * beatStep;
-		const yPosition = calculateYPositionEditor(timestamp, lineTime, scrollSpeed, laneHeight, hitPosition);
+		const yPosition = yPositionFromTimestampEditor(timestamp, lineTime, scrollSpeed, laneHeight, hitPosition);
 		if (yPosition < 0) {
 			break;
 		}
 		
 		if (yPosition < laneHeight) {
-			offscreenContext.fillRect(0, yPosition, laneWidth, lineIndex % timeSignature === 0 ? 7 : 2);
+			offscreenContext.rect(0, yPosition, laneWidth, lineIndex % timeSignature === 0 ? 7 : 2);
 		}
 		
 		lineIndex++;
 	}
 	
+	offscreenContext.closePath();
+	offscreenContext.fill();
+	
 	if (beatSnapDivisor > 1) {
 		let fillPattern: Array<string>;
 		switch (beatSnapDivisor) {
-			case 2: { fillPattern = ['', 'hsl(0, 100%, 50%)']; break; }
-			case 3: { fillPattern = ['', 'hsl(300, 100%, 30%)']; break; }
-			case 4: { fillPattern = ['', 'hsl(0, 100%, 50%)', 'hsl(217, 67%, 46%)', 'hsl(0, 100%, 50%)']; break; }
-			case 5: { fillPattern = ['', 'hsl(0, 0%, 49%)']; break; }
-			case 6: { fillPattern = ['', 'hsl(300, 100%, 30%)', 'hsl(0, 100%, 50%)', 'hsl(217, 67%, 46%)', 'hsl(0, 100%, 50%)', 'hsl(300, 100%, 30%)']; break; }
-			case 7: { fillPattern = ['', 'hsl(0, 0%, 49%)']; break; }
-			case 8: { fillPattern = ['', 'hsl(60, 100%, 39%)', 'hsl(0, 100%, 50%)', 'hsl(60, 100%, 39%)', 'hsl(217, 67%, 46%)', 'hsl(60, 100%, 39%)', 'hsl(0, 100%, 50%)', 'hsl(60, 100%, 39%)']; break; }
-			case 9: { fillPattern = ['', 'hsl(0, 0%, 49%)', 'hsl(0, 0%, 49%)', 'hsl(300, 100%, 30%)', 'hsl(0, 0%, 49%)', 'hsl(0, 0%, 49%)', 'hsl(300, 100%, 30%)', 'hsl(0, 0%, 49%)', 'hsl(0, 0%, 49%)']; break; }
-			case 12: { fillPattern = ['', 'hsl(0, 0%, 49%)', 'hsl(300, 38%, 32%)', 'hsl(217, 67%, 46%)', 'hsl(300, 100%, 30%)', 'hsl(0, 0%, 49%)', 'hsl(0, 100%, 39%)', 'hsl(0, 0%, 49%)', 'hsl(300, 100%, 30%)', 'hsl(217, 67%, 46%)', 'hsl(300, 38%, 32%)', 'hsl(0, 0%, 49%)']; break; }
-			case 16: { fillPattern = ['', 'hsl(0, 0%, 49%)']; break; }
-			default: { fillPattern = ['', 'hsl(0, 0%, 80%)']; break; }
+			case 2: fillPattern = ['', 'hsl(0, 100%, 50%)']; break;
+			case 3: fillPattern = ['', 'hsl(300, 100%, 30%)']; break;
+			case 4: fillPattern = ['', 'hsl(0, 100%, 50%)', 'hsl(217, 67%, 46%)', 'hsl(0, 100%, 50%)']; break;
+			case 5: fillPattern = ['', 'hsl(0, 0%, 49%)']; break;
+			case 6: fillPattern = ['', 'hsl(300, 100%, 30%)', 'hsl(0, 100%, 50%)', 'hsl(217, 67%, 46%)', 'hsl(0, 100%, 50%)', 'hsl(300, 100%, 30%)']; break;
+			case 7: fillPattern = ['', 'hsl(0, 0%, 49%)']; break;
+			case 8: fillPattern = ['', 'hsl(60, 100%, 39%)', 'hsl(0, 100%, 50%)', 'hsl(60, 100%, 39%)', 'hsl(217, 67%, 46%)', 'hsl(60, 100%, 39%)', 'hsl(0, 100%, 50%)', 'hsl(60, 100%, 39%)']; break;
+			case 9: fillPattern = ['', 'hsl(0, 0%, 49%)', 'hsl(0, 0%, 49%)', 'hsl(300, 100%, 30%)', 'hsl(0, 0%, 49%)', 'hsl(0, 0%, 49%)', 'hsl(300, 100%, 30%)', 'hsl(0, 0%, 49%)', 'hsl(0, 0%, 49%)']; break;
+			case 12: fillPattern = ['', 'hsl(0, 0%, 49%)', 'hsl(300, 38%, 32%)', 'hsl(217, 67%, 46%)', 'hsl(300, 100%, 30%)', 'hsl(0, 0%, 49%)', 'hsl(0, 100%, 39%)', 'hsl(0, 0%, 49%)', 'hsl(300, 100%, 30%)', 'hsl(217, 67%, 46%)', 'hsl(300, 38%, 32%)', 'hsl(0, 0%, 49%)']; break;
+			case 16: fillPattern = ['', 'hsl(0, 0%, 49%)']; break;
+			default: fillPattern = ['', 'hsl(0, 0%, 80%)']; break;
 		}
 		
 		beatStep /= beatSnapDivisor;
-		lineIndex = 0;
+		const rectsByColor: Record<string, Array<number>> = {};
+		
+		let lineIndex = 0;
 		while (true) {
 			const lineTime = startingPoint + lineIndex * beatStep;
-			const yPosition = calculateYPositionEditor(timestamp, lineTime, scrollSpeed, laneHeight, hitPosition);
+			const yPosition = yPositionFromTimestampEditor(timestamp, lineTime, scrollSpeed, laneHeight, hitPosition);
 			if (yPosition < 0) {
 				break;
 			}
 			
 			if (yPosition < laneHeight && lineIndex % beatSnapDivisor !== 0) {
-				let fillStyle = fillPattern[lineIndex % fillPattern.length];
-				offscreenContext.fillStyle = fillStyle;
-				offscreenContext.fillRect(0, yPosition, laneWidth, 2);
+				const fillStyle = fillPattern[lineIndex % fillPattern.length];
+				if (!rectsByColor[fillStyle]) {
+					rectsByColor[fillStyle] = [];
+				}
+				
+				rectsByColor[fillStyle].push(yPosition);
 			}
 			
 			lineIndex++;
 		}
+		
+		for (const [fillStyle, rects] of Object.entries(rectsByColor)) {
+			offscreenContext.fillStyle = fillStyle;
+			offscreenContext.beginPath();
+			for (const yPosition of rects) {
+				offscreenContext.rect(0, yPosition, laneWidth, 2);
+			}
+			
+			offscreenContext.closePath();
+			offscreenContext.fill();
+		}
 	}
 	
-	
+	const laneRect = canvas.getBoundingClientRect();
+	const [startX, startY] = dragStartPosition ?? [Infinity, Infinity];
+	const minX = Math.min(startX, mouseX) - laneRect.left;
+	const maxX = Math.max(startX, mouseX) - laneRect.left;
+	const minY = Math.min(startY, mouseY) - laneRect.top;
+	const maxY = Math.max(startY, mouseY) - laneRect.top;
+	const dragAffectsLane = 0 < maxX && minX < laneRect.width;
+	const selectedHitObjects = new Set<HitObject>();
 	for (const hitObject of nextHitObjects) {
 		const objectColumn = Math.floor(hitObject.startX * columnCount / 512);
 		if (columnIndex !== objectColumn) {
@@ -285,9 +345,8 @@ function renderEditContext(
 		}
 		
 		let yPosition: number | null = null;
-		
 		if ((hitObject.hitType & HitType.Normal) !== 0) {
-			yPosition = calculateYPositionEditor(timestamp, hitObject.startTime, scrollSpeed, laneHeight, hitPosition);
+			yPosition = yPositionFromTimestampEditor(timestamp, hitObject.startTime, scrollSpeed, laneHeight, hitPosition);
 			if (yPosition >= 0) {
 				let image = maniaNote1;
 				if (columnCount === 4 && (columnIndex === 1 || columnIndex === 2)) {
@@ -295,13 +354,26 @@ function renderEditContext(
 				}
 				
 				offscreenContext.drawImage(image, barX, yPosition - barHeight, laneWidth, barHeight);
+				
+				if ((mode === EditMode.Selection && dragStartPosition !== null && dragAffectsLane && minY < yPosition && yPosition - barHeight < maxY)
+				|| (currentSelectedHitObjects !== null && currentSelectedHitObjects.has(hitObject))) {
+					const selectionY = yPosition - barHeight;
+					const selectionHeight = barHeight;
+					
+					offscreenContext.strokeStyle = 'hsla(204, 60%, 50%, 0.3)';
+					offscreenContext.fillStyle = 'hsla(204, 60%, 50%, 0.5)';
+					offscreenContext.lineWidth = 10;
+					offscreenContext.fillRect(barX, selectionY, laneWidth, selectionHeight);
+					offscreenContext.strokeRect(barX, selectionY, laneWidth, selectionHeight);
+					selectedHitObjects.add(hitObject);
+				}
 			} else {
 				yPosition = null;
 			}
 		} else if ((hitObject.hitType & HitType.Hold) !== 0) {
 			const holdObject = hitObject as HoldableObject;
-			const yPositionHead = calculateYPositionEditor(timestamp, holdObject.startTime, scrollSpeed, laneHeight, hitPosition);
-			const yPositionTail = calculateYPositionEditor(timestamp, holdObject.endTime, scrollSpeed, laneHeight, hitPosition);
+			const yPositionHead = yPositionFromTimestampEditor(timestamp, holdObject.startTime, scrollSpeed, laneHeight, hitPosition);
+			const yPositionTail = yPositionFromTimestampEditor(timestamp, holdObject.endTime, scrollSpeed, laneHeight, hitPosition);
 			
 			if (yPositionHead >= 0) {
 				yPosition = yPositionHead;
@@ -319,21 +391,35 @@ function renderEditContext(
 				offscreenContext.drawImage(imageHead, barX, yPositionHead - barHeight, laneWidth, barHeight);
 				offscreenContext.drawImage(imageHead, barX, yPositionTail - barHeight, laneWidth, barHeight);
 				offscreenContext.drawImage(imageBody, barX, yPositionTail, laneWidth, yPositionHead - yPositionTail - barHeight);
+				
+				if ((mode === EditMode.Selection && dragStartPosition !== null && dragAffectsLane && minY < yPositionHead && yPositionTail - barHeight < maxY)
+				|| (currentSelectedHitObjects !== null && currentSelectedHitObjects.has(hitObject))) {
+					const selectionY = yPositionTail - barHeight;
+					const selectionHeight = yPositionHead - yPositionTail + barHeight;
+					
+					offscreenContext.strokeStyle = 'hsla(204, 60%, 50%, 0.3)';
+					offscreenContext.fillStyle = 'hsla(204, 60%, 50%, 0.5)';
+					offscreenContext.lineWidth = 10;
+					offscreenContext.fillRect(barX, selectionY, laneWidth, selectionHeight);
+					offscreenContext.strokeRect(barX, selectionY, laneWidth, selectionHeight);
+					selectedHitObjects.add(hitObject);
+				}
 			}
 		}
 		
 		if (hitObject.hitSound > 0 && yPosition !== null) {
 			const hitSounds = new Array<string>();
+			const [, whistle, finish, clap] = intToBits(hitObject.hitSound, 4);
 			
-			if ((hitObject.hitSound & HitSound.Whistle) !== 0) {
+			if (whistle) {
 				hitSounds.push('W');
 			}
 			
-			if ((hitObject.hitSound & HitSound.Finish) !== 0) {
+			if (finish) {
 				hitSounds.push('F');
 			}
 			
-			if ((hitObject.hitSound & HitSound.Clap) !== 0) {
+			if (clap) {
 				hitSounds.push('C');
 			}
 			
@@ -347,6 +433,44 @@ function renderEditContext(
 			}
 		}
 	}
+	
+	switch (mode) {
+		case EditMode.HitObject: {
+			if (laneRect.left < mouseX && mouseX < laneRect.right && laneRect.top < mouseY && mouseY < laneRect.bottom) {
+				const yPosition = mouseY - laneRect.top;
+				let image = maniaNote1;
+				if (columnCount === 4 && (columnIndex === 1 || columnIndex === 2)) {
+					image = maniaNote2;
+				}
+				
+				offscreenContext.globalAlpha = 0.5;
+				offscreenContext.drawImage(image, barX, yPosition - barHeight, laneWidth, barHeight);
+				offscreenContext.globalAlpha = 0;
+			}
+			
+			break;
+		}
+		case EditMode.Selection: {
+			if (dragStartPosition === null) {
+				break;
+			}
+			
+			offscreenContext.strokeStyle = 'hsla(204, 60%, 50%, 0.3)';
+			offscreenContext.fillStyle = 'hsla(204, 60%, 50%, 0.5)';
+			offscreenContext.lineWidth = 10;
+			
+			const left = dragStartPosition[0] - laneRect.left;
+			const top = dragStartPosition[1] - laneRect.top;
+			const right = mouseX - laneRect.left;
+			const bottom = mouseY - laneRect.top;
+			offscreenContext.fillRect(left, top, right - left, bottom - top);
+			offscreenContext.strokeRect(left, top, right - left, bottom - top);
+			
+			break;
+		}
+	}
+	
+	return selectedHitObjects;
 }
 
 interface Section1Props {
@@ -358,8 +482,7 @@ interface Section1Props {
 	setPlaying: ReactSet<boolean>;
 	timestamp: number;
 	setTimestamp: ReactSet<number>;
-	setBeatmapInfo: ReactSet<BeatmapInfo>;
-	setKeysPerSecond: ReactSet<number>;
+	setRenderedHitObjects: ReactSet<{ normal: number, long: number }>;
 }
 
 const Section1: React.FC<Section1Props> = ({
@@ -371,18 +494,23 @@ const Section1: React.FC<Section1Props> = ({
 	setPlaying,
 	timestamp,
 	setTimestamp,
-	setBeatmapInfo,
-	setKeysPerSecond,
+	setRenderedHitObjects,
 }) => {
 	const [normalUrl, setNormalUrl] = useState<string>(normalHitSound);
 	const [clapUrl, setClapUrl] = useState<string>(clapHitSound);
 	const [finishUrl, setFinishUrl] = useState<string>(finishHitSound);
 	const [whistleUrl, setWhistleUrl] = useState<string>(whistleHitSound);
+	const [changedBeatmap, setChangedBeatmap] = useState<string>('');
 	const playHitSound = useHitsound(normalUrl, clapUrl, finishUrl, whistleUrl);
 	
 	const [videoPath, setVideoPath] = useState<string | null>(null);
 	const [laneWidth, setLaneWidth] = useState<number | null>(null);
 	const [laneHeight, setLaneHeight] = useState<number | null>(null);
+	const [mouseX, setMouseX] = useState<number>(0);
+	const [mouseY, setMouseY] = useState<number>(0);
+	const [mode, setMode] = useState<EditMode>(EditMode.Selection);
+	const [dragStartPosition, setDragStartPosition] = useState<[number, number] | null>(null);
+	const [selectedHitObjects, setSelectedHitObjects] = useState<Set<HitObject> | null>(null);
 	
 	const videoRef = useRef<HTMLVideoElement | null>(null);
 	const editCanvasRefs = useRef<Map<number, [HTMLCanvasElement, CanvasRenderingContext2D, OffscreenCanvas, OffscreenCanvasRenderingContext2D]>>(new Map());
@@ -396,41 +524,18 @@ const Section1: React.FC<Section1Props> = ({
 			return;
 		}
 		
-		const hitPosition = 420;
-		const scrollSpeed = userOptions.scrollSpeed;
-		
+		const hitPosition = userOptions.hitPosition;
 		const timingPoints = beatmap.controlPoints.timingPoints;
-		const diffPoints = beatmap.controlPoints.difficultyPoints;
+		const difficultyPoints = beatmap.controlPoints.difficultyPoints;
 		const hitObjects = beatmap.hitObjects;
-		let nextTimings = new Array<TimingPoint>();
-		let nextDiffs = new Array<DifficultyPoint>();
 		let nextHitObjects = new Array<HitObject>();
-		let sliderVelocity = 1;
-		let bpm = 60;
 		
-		if (timingPoints.length > 0) {
-			bpm = timingPoints[0].bpmUnlimited;
-		}
-		
-		for (let i = 0; i < timingPoints.length; i++) {
-			const timingPoint = timingPoints[i];
-			if (timingPoint.startTime > timestamp) {
-				nextTimings = timingPoints.slice(i);
-				break;
-			}
-			
-			bpm = timingPoint.bpmUnlimited;
-		}
-		
-		for (let i = 0; i < diffPoints.length; i++) {
-			const diffPoint = diffPoints[i];
-			if (diffPoint.startTime > timestamp) {
-				nextDiffs = diffPoints.slice(i);
-				break;
-			}
-			
-			sliderVelocity = diffPoint.sliderVelocityUnlimited;
-		}
+		const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
+		const bpm = currentTimingPoint.bpmUnlimited;
+		const currentDifficultyPoint = beatmap.controlPoints.difficultyPointAt(timestamp);
+		const sliderVelocity = currentDifficultyPoint.sliderVelocityUnlimited;
+		const nextTimings = timingPoints.slice(timingPoints.indexOf(currentTimingPoint) + 1);
+		const nextDiffs = difficultyPoints.slice(difficultyPoints.indexOf(currentDifficultyPoint) + 1);
 		
 		for (let i = 0; i < hitObjects.length; i++) {
 			const hitObject = hitObjects[i];
@@ -454,8 +559,10 @@ const Section1: React.FC<Section1Props> = ({
 			}
 		}
 		
-		let renderedNormalObjects = 0;
-		let renderedHoldObjects = 0;
+		const renderedHitObjects = {
+			normal: 0,
+			long: 0,
+		};
 		
 		for (const [i, [, context, offscreenCanvas, offscreenContext]] of previewCanvases) {
 			offscreenCanvas.width = laneWidth;
@@ -464,7 +571,7 @@ const Section1: React.FC<Section1Props> = ({
 			// const hitPosition = (Math.sin((timestamp / Math.PI) / 100 + (i / Math.PI) * 5) + 1) / 2 * (Math.cos(timestamp / Math.PI / 100 + i * 3) * 50) + 400;
 			// ^ lol
 			
-			const [normalObjects, holdObjects] = renderPreviewContext(
+			const [renderedNormalObjects, renderedLongObjects] = renderPreviewContext(
 				offscreenContext,
 				laneWidth,
 				laneHeight,
@@ -472,7 +579,7 @@ const Section1: React.FC<Section1Props> = ({
 				timestamp,
 				keyCount,
 				i,
-				scrollSpeed,
+				userOptions.scrollSpeed,
 				bpm,
 				sliderVelocity,
 				nextTimings,
@@ -482,39 +589,53 @@ const Section1: React.FC<Section1Props> = ({
 			
 			context.drawImage(offscreenCanvas, 0, 0);
 			
-			renderedNormalObjects += normalObjects;
-			renderedHoldObjects += holdObjects;
+			renderedHitObjects.normal += renderedNormalObjects;
+			renderedHitObjects.long += renderedLongObjects;
 		}
 		
-		for (const [i, [, context, offscreenCanvas, offscreenContext]] of editCanvases) {
+		setRenderedHitObjects(renderedHitObjects);
+		
+		const totalSelectedHitObjects = new Set<HitObject>();
+		for (const [columnIndex, [canvas, context, offscreenCanvas, offscreenContext]] of editCanvases) {
 			offscreenCanvas.width = laneWidth;
 			offscreenCanvas.height = laneHeight;
 			
-			renderEditContext(
+			const newSelectedHitObjects = renderEditContext(
 				offscreenContext,
 				laneWidth,
 				laneHeight,
 				hitPosition,
 				timestamp,
-				keyCount,
-				i,
-				scrollSpeed,
+				columnIndex,
 				nextHitObjects,
 				beatmap,
 				userOptions,
+				canvas,
+				mouseX,
+				mouseY,
+				mode,
+				dragStartPosition,
+				selectedHitObjects,
 			);
 			
 			context.drawImage(offscreenCanvas, 0, 0);
+			for (const newHitObject of newSelectedHitObjects) {
+				totalSelectedHitObjects.add(newHitObject);
+			}
 		}
 		
-		setBeatmapInfo({
-			bpm,
-			sliderVelocity,
-			renderedHoldObjects,
-			renderedNormalObjects,
-		});
-	}, [previewCanvasRefs, editCanvasRefs, laneWidth, laneHeight, timestamp, userOptions]);
-	
+		if (mode === EditMode.Selection) {
+			setSelectedHitObjects((selectedHitObjects) => {
+				if (selectedHitObjects !== null) {
+					for (const hitObject of selectedHitObjects) {
+						totalSelectedHitObjects.add(hitObject);
+					}
+				}
+				
+				return totalSelectedHitObjects;
+			});
+		}
+	}, [previewCanvasRefs, editCanvasRefs, laneWidth, laneHeight, timestamp, userOptions, mouseX, mouseY, changedBeatmap, mode, dragStartPosition]);
 	useEffect(() => {
 		const video = videoRef.current;
 		if (!video || isPlaying) {
@@ -539,7 +660,7 @@ const Section1: React.FC<Section1Props> = ({
 			}
 			
 			const boundingRect = sectionRef.current.getBoundingClientRect();
-			const laneWidth = Math.round(boundingRect.width * 0.275) / keyCount;
+			const laneWidth = Math.round(boundingRect.width * userOptions.laneWidthPercent * 0.01) / keyCount;
 			const laneHeight = Math.round(boundingRect.height);
 			setLaneWidth(laneWidth);
 			setLaneHeight(laneHeight);
@@ -547,11 +668,11 @@ const Section1: React.FC<Section1Props> = ({
 		
 		observer.observe(sectionRef.current);
 		return () => observer.disconnect();
-	}, [sectionRef]);
+	}, [sectionRef, userOptions]);
 	
 	useEffect(() => {
 		const music = musicRef.current;
-		const video = videoRef.current; // not returning if video doesn't exist
+		const video = videoRef.current;
 		if (!music) {
 			return;
 		}
@@ -590,16 +711,12 @@ const Section1: React.FC<Section1Props> = ({
 		music.currentTime = timestamp / 1_000;
 		music.volume = 0.4;
 		music.play();
-		
+		music.onended = () => setPlaying(false);
 		if (video !== null) {
 			video.currentTime = music.currentTime;
 			video.volume = 0;
 			video.play();
 		}
-		
-		const onEnded = () => setPlaying(false);
-		
-		music.onended = onEnded;
 		
 		nextHitObject = beatmap.hitObjects.findIndex((hitObject) => hitObject.startTime >= timestamp);
 		if (nextHitObject === -1) {
@@ -617,10 +734,41 @@ const Section1: React.FC<Section1Props> = ({
 	}, [isPlaying, musicRef, videoRef]);
 	
 	useEffect(() => {
+		const music = musicRef.current;
+		if (music !== null) {
+			music.playbackRate = userOptions.playBackSpeed;
+			music.preservesPitch = !userOptions.speedAdjustsPitch;
+		}
+		
+		const video = videoRef.current;
+		if (video !== null) {
+			video.playbackRate = userOptions.playBackSpeed;
+		}
+	}, [musicRef, videoRef, userOptions.playBackSpeed, userOptions.speedAdjustsPitch]);
+	
+	useEffect(() => {
+		const video = videoRef.current;
+		if (video === null) {
+			return;
+		}
+		
+		const fadeDuration = 1;
+		let opacity = 1;
+		const seconds = timestamp / 1_000;
+		if (seconds < fadeDuration) {
+			opacity = seconds / fadeDuration;
+		} else if (seconds > video.duration - fadeDuration) {
+			opacity = Math.max((video.duration - seconds) / fadeDuration, 0);
+		}
+		
+		video.style.opacity = opacity.toString();
+	}, [timestamp, videoRef]);
+	
+	useEffect(() => {
 		setVideoPath(null);
 		
 		const videoBackground = beatmap.events.storyboard?.getLayerByName('Video');
-		if (videoBackground?.elements) {
+		if (videoBackground?.elements && videoBackground.elements[0] !== undefined) {
 			const filePath = joinPaths(beatmap.songPath, videoBackground.elements[0].filePath);
 			
 			exists(filePath)
@@ -684,130 +832,314 @@ const Section1: React.FC<Section1Props> = ({
 	}, [beatmap]);
 	
 	useEffect(() => {
-		let kps = 0;
-		for (const hitObject of beatmap.hitObjects) {
-			if (hitObject.startTime > timestamp) {
-				break;
-			}
-			
-			if (hitObject.startTime > timestamp - 1_000) {
-				kps++;
-			}
+		const columnCount = beatmap.difficulty.circleSize;
+		const editCanvases = editCanvasRefs.current;
+		const section = sectionRef.current;
+		if (editCanvases.size !== columnCount || section === null) {
+			return;
 		}
 		
-		setKeysPerSecond(kps);
-	}, [timestamp, beatmap]);
+		const onMouseEvent = (event: MouseEvent) => {
+			switch (event.button) {
+				case 0: {
+					switch (mode) {
+						case EditMode.HitObject: {
+							if (event.type !== 'mousedown') {
+								break;
+							}
+							
+							for (const [columnIndex, [laneCanvas]] of editCanvasRefs.current) {
+								if (event.target === laneCanvas) {
+									const { scrollSpeed, hitPosition, beatSnapDivisor } = userOptions;
+									
+									const laneRect = laneCanvas.getBoundingClientRect();
+									const laneHeight = laneRect.height;
+									const yPosition = event.clientY - laneRect.top;
+									let targetMillisecond = millisecondFromYPositionEditor(timestamp, yPosition, scrollSpeed, laneHeight, hitPosition);
+									
+									const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
+									const startingPoint = currentTimingPoint.startTime < timestamp ? currentTimingPoint.startTime : 0;
+									let beatStep = 60_000 / currentTimingPoint.bpmUnlimited / beatSnapDivisor;
+									let lineIndex = 0;
+									
+									let closestTime = targetMillisecond;
+									let closestDistance = Infinity;
+									while (true) {
+										const lineTime = startingPoint + lineIndex * beatStep;
+										const yPosition = yPositionFromTimestampEditor(timestamp, lineTime, scrollSpeed, laneHeight, hitPosition);
+										if (yPosition < -laneHeight) {
+											break;
+										}
+										
+										if (yPosition < laneHeight * 2) {
+											const distance = Math.abs(lineTime - targetMillisecond);
+											if (distance < closestDistance) {
+												closestTime = lineTime;
+												closestDistance = distance;
+											}
+										}
+										
+										lineIndex++;
+									}
+									
+									const hittableObject = new HittableObject();
+									hittableObject.hitType = HitType.Normal;
+									hittableObject.startTime = closestTime;
+									hittableObject.startX = columnIndex * 128 + 64;
+									hittableObject.startY = 192;
+									
+									beatmap.hitObjects.push(hittableObject);
+									beatmap.hitObjects.sort((a, b) => a.startTime - b.startTime);
+									console.log('added hitObject at', closestTime);
+									
+									setChangedBeatmap(crypto.randomUUID());
+									
+									break;
+								}
+							}
+							break;
+						}
+						case EditMode.Selection: {
+							setDragStartPosition(event.type === 'mousedown' ? [event.clientX, event.clientY] : null);
+							if (event.type === 'mousedown') {
+								setSelectedHitObjects(null);
+							}
+							
+							break;
+						}
+					}
+					
+					break;
+				}
+				case 2: {
+					break;
+				}
+			}
+		};
+		
+		const onContextMenu = (event: MouseEvent) => {
+			event.preventDefault();
+		};
+		
+		section.addEventListener('mousedown', onMouseEvent);
+		section.addEventListener('mouseup', onMouseEvent);
+		section.addEventListener('contextmenu', onContextMenu);
+		
+		return () => {
+			section.removeEventListener('mousedown', onMouseEvent);
+			section.removeEventListener('mouseup', onMouseEvent);
+			section.removeEventListener('contextmenu', onContextMenu);
+		}
+	}, [editCanvasRefs, sectionRef, timestamp, userOptions.scrollSpeed, userOptions.hitPosition, userOptions.beatSnapDivisor, mode]);
 	
-	// useEffect(() => {
-	// 	setKeysPerSecond(keyPressTimes.length);
-	// }, [keyPressTimes]);
+	useEffect(() => {
+		const columnCount = beatmap.difficulty.circleSize;
+		const editCanvases = editCanvasRefs.current;
+		const section = sectionRef.current;
+		if (editCanvases.size !== columnCount || section === null) {
+			return;
+		}
+		
+		const onMouseMove = (event: MouseEvent) => {
+			setMouseX(event.clientX);
+			setMouseY(event.clientY);
+		};
+		
+		window.addEventListener('mousemove', onMouseMove);
+		
+		return () => {
+			window.removeEventListener('mousemove', onMouseMove);
+		};
+	}, [editCanvasRefs, sectionRef]);
+	
+	useEffect(() => {
+		setSelectedHitObjects(null);
+		setDragStartPosition(null);
+	}, [mode]);
+	
+	useEffect(() => {
+		const keyPressListener = (event: KeyboardEvent) => {
+			switch (event.code) {
+				case 'Digit1': {
+					setMode(EditMode.Selection);
+					break;
+				}
+				case 'Digit2': {
+					setMode(EditMode.HitObject);
+					break;
+				}
+				case 'Digit3': {
+					setMode(EditMode.Delete);
+					break;
+				}
+				case 'Escape': {
+					setSelectedHitObjects(null);
+					break;
+				}
+			}
+		};
+		
+		window.addEventListener('keydown', keyPressListener);
+		return () => {
+			window.removeEventListener('keydown', keyPressListener);
+		};
+	}, []);
 	
 	return (
-		<div
-			className={'section s1'}
-			ref={sectionRef}
-			onWheel={(event) => {
-				const music = musicRef.current;
-				if (music === null) {
-					return;
-				}
-				
-				const direction = Math.sign(event.deltaY);
-				const newTimestamp = clamp(timestamp + 1_000 * direction, 0, 1_000 * music.duration);
-				
-				if (isPlaying) {
-					setPlaying(false);
-					setTimeout(() => {
+		<>
+			<div
+				className={'section s1'}
+				ref={sectionRef}
+				onWheel={(event) => {
+					const music = musicRef.current;
+					if (music === null) {
+						return;
+					}
+					
+					const direction = Math.sign(event.deltaY);
+					const newTimestamp = clamp(timestamp + 1_000 * direction, 0, 1_000 * music.duration);
+					
+					if (isPlaying) {
+						setPlaying(false);
+						setTimeout(() => {
+							setTimestamp(newTimestamp);
+							
+							setTimeout(setPlaying, 50, true);
+						}, 50);
+					} else {
 						setTimestamp(newTimestamp);
-						
-						setTimeout(setPlaying, 50, true);
-					}, 50);
-				} else {
-					setTimestamp(newTimestamp);
-				}
-			}}
-		>
-			{beatmap.events.backgroundPath && (
-				<img
-					className={'imgBackground'}
-					src={convertFileSrc(joinPaths(beatmap.songPath, beatmap.events.backgroundPath))}
-				/>
-			)}
-			{videoPath && (
-				<video
-					ref={videoRef}
-					className={'videoBackground'}
-					muted={true}
-					playsInline={true}
-					controls={false}
-					src={convertFileSrc(videoPath)}
-				/>
-			)}
-			<div className={'hitObjectEditor edit'}>
-				{new Array(keyCount).fill(undefined).map((_value, i) => {
-					return (
-						<canvas
-							className={'lane'}
-							key={i}
-							width={laneWidth ?? 1}
-							height={laneHeight ?? 1}
-							style={{
-								width: `${laneWidth}px`,
-								height: `${laneHeight}px`,
-							}}
-							ref={(element) => {
-								editCanvasRefs.current.delete(i);
-								
-								const context = element?.getContext('2d');
-								if (element === null || !context) {
-									return;
-								}
-								
-								const offscreenCanvas = new OffscreenCanvas(1, 1);
-								const offscreenContext = offscreenCanvas.getContext('2d');
-								if (!offscreenContext) {
-									return;
-								}
-								
-								editCanvasRefs.current.set(i, [element, context, offscreenCanvas, offscreenContext]);
-							}}
+					}
+				}}
+			>
+				{beatmap.events.backgroundPath && (
+					<img
+						className={'imgBackground'}
+						src={convertFileSrc(joinPaths(beatmap.songPath, beatmap.events.backgroundPath))}
+						draggable={false}
 						/>
-					);
-				})}
+					)}
+				{videoPath && (
+					<video
+						ref={videoRef}
+						className={'videoBackground'}
+						muted={true}
+						playsInline={true}
+						controls={false}
+						src={convertFileSrc(videoPath)}
+						draggable={false}
+					/>
+				)}
+				<div className={'hitObjectEditor preview'}>
+					{new Array(keyCount).fill(undefined).map((_value, i) => {
+						return (
+							<canvas
+								className={'lane'}
+								key={i}
+								width={laneWidth ?? 1}
+								height={laneHeight ?? 1}
+								style={{
+									width: `${laneWidth}px`,
+									height: `${laneHeight}px`,
+								}}
+								ref={(element) => {
+									previewCanvasRefs.current.delete(i);
+									
+									const context = element?.getContext('2d');
+									if (element === null || !context) {
+										return;
+									}
+									
+									const offscreenCanvas = new OffscreenCanvas(1, 1);
+									const offscreenContext = offscreenCanvas.getContext('2d');
+									if (!offscreenContext) {
+										return;
+									}
+									
+									previewCanvasRefs.current.set(i, [element, context, offscreenCanvas, offscreenContext]);
+								}}
+							/>
+						);
+					})}
+				</div>
+				<div className={'hitObjectEditor edit'}>
+					{new Array(keyCount).fill(undefined).map((_value, i) => {
+						return (
+							<canvas
+								className={'lane'}
+								key={i}
+								width={laneWidth ?? 1}
+								height={laneHeight ?? 1}
+								style={{
+									width: `${laneWidth}px`,
+									height: `${laneHeight}px`,
+									cursor: mode === EditMode.Selection ? 'crosshair' : mode === EditMode.Delete ? 'default' : 'cell',
+								}}
+								ref={(element) => {
+									editCanvasRefs.current.delete(i);
+									
+									const context = element?.getContext('2d');
+									if (element === null || !context) {
+										return;
+									}
+									
+									const offscreenCanvas = new OffscreenCanvas(1, 1);
+									const offscreenContext = offscreenCanvas.getContext('2d');
+									if (!offscreenContext) {
+										return;
+									}
+									
+									editCanvasRefs.current.set(i, [element, context, offscreenCanvas, offscreenContext]);
+								}}
+							/>
+						);
+					})}
+				</div>
+				<div className={'modeSelector'}>
+					<button
+						onClick={(event) => {
+							if (event.detail === 0) {
+								return;
+							}
+							
+							setMode(EditMode.Selection);
+						}}
+						className={'mode' + (mode === EditMode.Selection ? ' selected' : '')}
+						tabIndex={-1}
+					>
+						<img className={'icon'} src={editorModeSelectionIcon} />
+						<p className={'label'}>Selection</p>
+					</button>
+					<button
+						onClick={(event) => {
+							if (event.detail === 0) {
+								return;
+							}
+							
+							setMode(EditMode.HitObject);
+						}}
+						className={'mode' + (mode === EditMode.HitObject ? ' selected' : '')}
+						tabIndex={-1}
+					>
+						<img className={'icon'} src={editorModeNormalIcon} />
+						<p className={'label'}>HitObject</p>
+					</button>
+					<button
+						onClick={(event) => {
+							if (event.detail === 0) {
+								return;
+							}
+							
+							setMode(EditMode.Delete);
+						}}
+						className={'mode' + (mode === EditMode.Delete ? ' selected' : '')}
+						tabIndex={-1}
+					>
+						<img className={'icon'} src={editorModeLongIcon} />
+						<p className={'label'}>Delete</p>
+					</button>
+				</div>
 			</div>
-			<div className={'hitObjectEditor preview'}>
-				{new Array(keyCount).fill(undefined).map((_value, i) => {
-					return (
-						<canvas
-							className={'lane'}
-							key={i}
-							width={laneWidth ?? 1}
-							height={laneHeight ?? 1}
-							style={{
-								width: `${laneWidth}px`,
-								height: `${laneHeight}px`,
-							}}
-							ref={(element) => {
-								previewCanvasRefs.current.delete(i);
-								
-								const context = element?.getContext('2d');
-								if (element === null || !context) {
-									return;
-								}
-								
-								const offscreenCanvas = new OffscreenCanvas(1, 1);
-								const offscreenContext = offscreenCanvas.getContext('2d');
-								if (!offscreenContext) {
-									return;
-								}
-								
-								previewCanvasRefs.current.set(i, [element, context, offscreenCanvas, offscreenContext]);
-							}}
-						/>
-					);
-				})}
-			</div>
-		</div>
+		</>
 	);
 };
 

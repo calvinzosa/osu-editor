@@ -1,11 +1,10 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 
 import './App.scss';
-
-import SongListPage from './SongListPage';
-import SongEditPage from './SongEditPage';
-import NotFound from './NotFound';
+import BeatmapListPage from '@/components/SongListPage';
+import BeatmapEditPage from '@/components/SongEditPage';
+import NotFound from '@/components/NotFound';
 
 const App: React.FC = () => {
 	const location = useLocation();
@@ -14,10 +13,14 @@ const App: React.FC = () => {
 		console.clear();
 	}, [location.pathname]);
 	
+	useEffect(() => {
+		document.getElementById('loading')?.remove();
+	}, []);
+	
 	return (
 		<Routes>
-			<Route path={'/'} element={<SongListPage />} />
-			<Route path={'/edit'} element={<SongEditPage />} />
+			<Route path={'/'} element={<BeatmapListPage />} />
+			<Route path={'/edit'} element={<BeatmapEditPage />} />
 			<Route path={'*'} element={<NotFound />} />
 		</Routes>
 	);

@@ -25,13 +25,6 @@ export interface OsuBeatmap extends ReturnType<typeof beatmapDecoder.decodeFromB
 	maxComboLazer: number;
 }
 
-export interface BeatmapInfo {
-	bpm: number;
-	sliderVelocity: number;
-	renderedNormalObjects: number;
-	renderedHoldObjects: number;
-}
-
 export function useHitsound(normalUrl: string, clapUrl: string, finishUrl: string, whistleUrl: string) {
 	const audioContextRef = useRef<AudioContext | null>(null);
 	const buffersRef = useRef<{ [key in HitSound]?: AudioBuffer }>({});
@@ -99,7 +92,9 @@ export function calculateActualNoteSpeed(scrollSpeed: number, bpm: number, slide
 	return Math.max(pixelsPerSecond * 25, 0);
 }
 
-export function calculateYPosition(
+// pretty sure this doesn't work with targetMilliseconds that are less than the current timestamp lol, this
+// is probably why there are a bunch of lines under the receptors/jugdement line in the preview
+export function yPositionFromTimestamp(
 	timestamp: number,
 	targetMillisecond: number,
 	scrollSpeed: number,
@@ -139,7 +134,7 @@ export function calculateYPosition(
 			bpm = nextPoint.bpmUnlimited;
 			nextTimingPointIndex++;
 		} else if (isDifficultyPoint(nextPoint)) {
-			sliderVelocity = (nextPoint as DifficultyPoint).sliderVelocityUnlimited;
+			sliderVelocity = nextPoint.sliderVelocityUnlimited;
 			nextDifficultyPointIndex++;
 		}
 		
@@ -148,18 +143,23 @@ export function calculateYPosition(
 	}
 }
 
-export function calculateYPositionEditor(timestamp: number, targetMillisecond: number, scrollSpeed: number, laneHeight: number, hitPosition: number) {
+export function yPositionFromTimestampEditor(timestamp: number, targetMillisecond: number, scrollSpeed: number, laneHeight: number, hitPosition: number) {
 	const movementHeight = laneHeight * (hitPosition / 480);
 	const currentSpeed = calculateActualNoteSpeed(scrollSpeed, 60, 1) * 2;
-	
 	return movementHeight - (targetMillisecond - timestamp) / 1_000 * currentSpeed;
 }
 
-let isProcessingSongs = false;
+export function millisecondFromYPositionEditor(timestamp: number, yPosition: number, scrollSpeed: number, laneHeight: number, hitPosition: number) {
+	const currentSpeed = calculateActualNoteSpeed(scrollSpeed, 60, 1);
+	return Math.round((1000 * ((laneHeight * hitPosition) / 480 - yPosition)) / (2 * currentSpeed) + timestamp);
+	// just moved around the equation from yPositionFromTimestampEditor to get this
+}
+
+let isProcessingBeatmaps = false;
 
 async function processSong(songPath: string, loadedSongs: Record<string, Array<OsuBeatmap>>, completed: () => void) {
 	const fileEntries = await readDir(songPath);
-	const songFiles = new Set<string>();
+	const beatmapFiles = new Set<string>();
 	
 	for (const fileEntry of fileEntries) {
 		if (!fileEntry.isFile) {
@@ -172,11 +172,11 @@ async function processSong(songPath: string, loadedSongs: Record<string, Array<O
 			continue;
 		}
 		
-		songFiles.add(filePath);
+		beatmapFiles.add(filePath);
 	}
 	
 	const loadedDifficulties = new Array<OsuBeatmap>();
-	for (const filePath of songFiles) {
+	for (const filePath of beatmapFiles) {
 		try {
 			const contents = await readFile(filePath);
 			const beatmap = beatmapDecoder.decodeFromBuffer(contents, {
@@ -198,7 +198,7 @@ async function processSong(songPath: string, loadedSongs: Record<string, Array<O
 		}
 	}
 	
-	loadedDifficulties.sort((a, b) => (a.maxComboStable + a.maxComboLazer) / 2 - (b.maxComboStable + b.maxComboLazer) / 2);
+	loadedDifficulties.sort((a, b) => a.maxComboStable - b.maxComboStable);
 	
 	loadedSongs[songPath] = loadedDifficulties;
 	completed();
@@ -229,29 +229,33 @@ export function initializeBeatmap(beatmap: OsuBeatmap, filePath: string, songPat
 	beatmap.hitObjects.sort((a, b) => a.startTime - b.startTime);
 }
 
-export async function processBeatmaps(songsPath: string, setSongList: ReactSet<Record<string, Array<OsuBeatmap>> | null>, setLoadingProgress: ReactSet<number>, setTotalSongs: ReactSet<number>) {
-	if (isProcessingSongs) {
+export async function processBeatmaps(
+	beatmapsPath: string,
+	setBeatmapList: ReactSet<Record<string, Array<OsuBeatmap>> | null>,
+	setLoadingProgress: ReactSet<number>,
+	setTotalBeatmaps: ReactSet<number>,
+): Promise<void> {
+	if (isProcessingBeatmaps) {
 		return;
 	}
 	
-	isProcessingSongs = true;
+	isProcessingBeatmaps = true;
 	
-	const songEntries = await readDir(songsPath);
-	const loadedSongs: Record<string, Array<OsuBeatmap>> = {};
-	
-	setSongList(null);
+	const beatmapEntries = await readDir(beatmapsPath);
+	const loadedBeatmaps: Record<string, Array<OsuBeatmap>> = {};
+	setBeatmapList(null);
 	setLoadingProgress(0);
-	setTotalSongs(songEntries.length);
+	setTotalBeatmaps(beatmapEntries.length);
 	
-	const promises = songEntries
-		.filter((songEntry) => songEntry.isDirectory)
-		.map((songEntry) => {
-			const songPath = joinPaths(songsPath, songEntry.name);
-			return processSong(songPath, loadedSongs, () => setLoadingProgress((v) => v + 1));
+	const promises = beatmapEntries
+		.filter((entry) => entry.isDirectory)
+		.map((entry) => {
+			const beatmapPath = joinPaths(beatmapsPath, entry.name);
+			return processSong(beatmapPath, loadedBeatmaps, () => setLoadingProgress((count) => count + 1));
 		});
 	
 	await Promise.all(promises);
 	
-	setSongList(loadedSongs);
-	isProcessingSongs = false;
+	setBeatmapList(loadedBeatmaps);
+	isProcessingBeatmaps = false;
 }

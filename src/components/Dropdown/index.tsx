@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import DropdownItem from './Item';
 
@@ -6,18 +6,22 @@ import './index.scss';
 
 type Direction = 'north' | 'east' | 'south' | 'west';
 
-interface DropdownProps {
+interface DropdownProps extends React.PropsWithChildren {
 	label: string;
 	openTo: Direction;
-	children?: React.ReactElement | Array<React.ReactElement>;
+	onlyMouseEvents?: boolean;
 }
 
-const DropdownContainer: React.FC<DropdownProps> = ({ label, openTo, children }) => {
+const DropdownContainer: React.FC<DropdownProps> = ({ label, openTo, children, onlyMouseEvents }) => {
 	const [open, setOpen] = useState<boolean>(false);
 	const buttonRef = useRef<HTMLButtonElement | null>(null);
 	const contentsRef = useRef<HTMLDivElement | null>(null);
 	
 	const onClick = (event: MouseEvent) => {
+		if (onlyMouseEvents && event.detail === 0) {
+			return;
+		}
+		
 		if (event.target instanceof HTMLButtonElement && contentsRef.current?.contains(event.target) && event.target !== buttonRef.current) {
 			if (event.target.classList.contains('item') && event.type === 'mouseup') {
 				setOpen(false);
