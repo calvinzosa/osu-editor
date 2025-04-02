@@ -6,7 +6,7 @@ import { DifficultyPoint, HitObject, HitSound, HitType, TimingPoint } from 'osu-
 import { HoldableObject, HittableObject } from 'osu-parsers';
 
 import { clamp, intToBits } from '@/utils';
-import { yPositionFromTimestamp, yPositionFromTimestampEditor, OsuBeatmap, useHitsound, millisecondFromYPositionEditor } from '@/utils/Beatmap';
+import { yPositionFromMillisecond, yPositionFromMillisecondEditor, OsuBeatmap, useHitsound, millisecondFromYPositionEditor } from '@/utils/Beatmap';
 import { getExtension, getFileName, joinPaths } from '@/utils/File';
 import { EditMode, ReactSet, UserOptions } from '@/utils/Types';
 
@@ -66,7 +66,7 @@ function renderPreviewContext(
 	for (let i = 0; i < totalLines; i++) {
 		const lineTime = i * snap;
 		
-		const yPosition = yPositionFromTimestamp(timestamp, lineTime, scrollSpeed, bpm, sliderVelocity, laneHeight, hitPosition, nextTimings, nextDiffs);
+		const yPosition = yPositionFromMillisecond(timestamp, lineTime, scrollSpeed, bpm, sliderVelocity, laneHeight, hitPosition, nextTimings, nextDiffs);
 		if (yPosition <= 0) {
 			break;
 		}
@@ -112,7 +112,7 @@ function renderPreviewContext(
 				continue;
 			}
 			
-			const yPosition = yPositionFromTimestamp(
+			const yPosition = yPositionFromMillisecond(
 				timestamp,
 				hitObject.startTime,
 				scrollSpeed,
@@ -142,7 +142,7 @@ function renderPreviewContext(
 			
 			const yPositionHead = Math.min(
 				laneHeight * (hitPosition / 480),
-				yPositionFromTimestamp(
+				yPositionFromMillisecond(
 					timestamp,
 					holdObject.startTime,
 					scrollSpeed,
@@ -155,7 +155,7 @@ function renderPreviewContext(
 				),
 			);
 			
-			const yPositionTail = yPositionFromTimestamp(
+			const yPositionTail = yPositionFromMillisecond(
 				timestamp,
 				holdObject.endTime,
 				scrollSpeed,
@@ -253,18 +253,17 @@ function renderEditContext(
 	offscreenContext.fillRect(0, Math.round(laneHeight * (hitPosition / 480)), laneWidth, 9);
 	
 	const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
-	const bpm = currentTimingPoint.bpmUnlimited;
+	const bpm = Math.max(currentTimingPoint.bpmUnlimited, 0);
 	const timeSignature = currentTimingPoint.timeSignature;
 	const startingPoint = currentTimingPoint.startTime < timestamp ? currentTimingPoint.startTime : 0;
-	
-	offscreenContext.fillStyle = 'hsl(0, 0%, 74%)';
-	
 	let beatStep = 60_000 / bpm;
 	let lineIndex = 0;
+	
+	offscreenContext.fillStyle = 'hsl(0, 0%, 74%)';
 	offscreenContext.beginPath();
 	while (true) {
-		const lineTime = startingPoint + lineIndex * beatStep;
-		const yPosition = yPositionFromTimestampEditor(timestamp, lineTime, scrollSpeed, laneHeight, hitPosition);
+		const lineTimestamp = startingPoint + lineIndex * beatStep;
+		const yPosition = yPositionFromMillisecondEditor(timestamp, lineTimestamp, scrollSpeed, laneHeight, hitPosition);
 		if (yPosition < 0) {
 			break;
 		}
@@ -295,13 +294,13 @@ function renderEditContext(
 			default: fillPattern = ['', 'hsl(0, 0%, 80%)']; break;
 		}
 		
-		beatStep /= beatSnapDivisor;
 		const rectsByColor: Record<string, Array<number>> = {};
+		beatStep /= beatSnapDivisor;
 		
 		let lineIndex = 0;
 		while (true) {
-			const lineTime = startingPoint + lineIndex * beatStep;
-			const yPosition = yPositionFromTimestampEditor(timestamp, lineTime, scrollSpeed, laneHeight, hitPosition);
+			const lineTimestamp = startingPoint + lineIndex * beatStep;
+			const yPosition = yPositionFromMillisecondEditor(timestamp, lineTimestamp, scrollSpeed, laneHeight, hitPosition);
 			if (yPosition < 0) {
 				break;
 			}
@@ -331,11 +330,14 @@ function renderEditContext(
 	}
 	
 	const laneRect = canvas.getBoundingClientRect();
-	const [startX, startY] = dragStartPosition ?? [Infinity, Infinity];
+	const [startX, dragTimestamp] = dragStartPosition ?? [Infinity, Infinity];
+	const dragY = isFinite(dragTimestamp) ? yPositionFromMillisecondEditor(timestamp, dragTimestamp, scrollSpeed, laneHeight, hitPosition) : Infinity;
+	
 	const minX = Math.min(startX, mouseX) - laneRect.left;
 	const maxX = Math.max(startX, mouseX) - laneRect.left;
-	const minY = Math.min(startY, mouseY) - laneRect.top;
-	const maxY = Math.max(startY, mouseY) - laneRect.top;
+	const minY = Math.min(dragY, mouseY - laneRect.top);
+	const maxY = Math.max(dragY, mouseY - laneRect.top);
+	
 	const dragAffectsLane = 0 < maxX && minX < laneRect.width;
 	const selectedHitObjects = new Set<HitObject>();
 	for (const hitObject of nextHitObjects) {
@@ -346,7 +348,7 @@ function renderEditContext(
 		
 		let yPosition: number | null = null;
 		if ((hitObject.hitType & HitType.Normal) !== 0) {
-			yPosition = yPositionFromTimestampEditor(timestamp, hitObject.startTime, scrollSpeed, laneHeight, hitPosition);
+			yPosition = yPositionFromMillisecondEditor(timestamp, hitObject.startTime, scrollSpeed, laneHeight, hitPosition);
 			if (yPosition >= 0) {
 				let image = maniaNote1;
 				if (columnCount === 4 && (columnIndex === 1 || columnIndex === 2)) {
@@ -372,8 +374,8 @@ function renderEditContext(
 			}
 		} else if ((hitObject.hitType & HitType.Hold) !== 0) {
 			const holdObject = hitObject as HoldableObject;
-			const yPositionHead = yPositionFromTimestampEditor(timestamp, holdObject.startTime, scrollSpeed, laneHeight, hitPosition);
-			const yPositionTail = yPositionFromTimestampEditor(timestamp, holdObject.endTime, scrollSpeed, laneHeight, hitPosition);
+			const yPositionHead = yPositionFromMillisecondEditor(timestamp, holdObject.startTime, scrollSpeed, laneHeight, hitPosition);
+			const yPositionTail = yPositionFromMillisecondEditor(timestamp, holdObject.endTime, scrollSpeed, laneHeight, hitPosition);
 			
 			if (yPositionHead >= 0) {
 				yPosition = yPositionHead;
@@ -459,12 +461,8 @@ function renderEditContext(
 			offscreenContext.fillStyle = 'hsla(204, 60%, 50%, 0.5)';
 			offscreenContext.lineWidth = 10;
 			
-			const left = dragStartPosition[0] - laneRect.left;
-			const top = dragStartPosition[1] - laneRect.top;
-			const right = mouseX - laneRect.left;
-			const bottom = mouseY - laneRect.top;
-			offscreenContext.fillRect(left, top, right - left, bottom - top);
-			offscreenContext.strokeRect(left, top, right - left, bottom - top);
+			offscreenContext.fillRect(minX, minY, maxX - minX, maxY - minY);
+			offscreenContext.strokeRect(minX, minY, maxX - minX, maxY - minY);
 			
 			break;
 		}
@@ -483,6 +481,8 @@ interface Section1Props {
 	timestamp: number;
 	setTimestamp: ReactSet<number>;
 	setRenderedHitObjects: ReactSet<{ normal: number, long: number }>;
+	mode: EditMode;
+	setMode: ReactSet<EditMode>;
 }
 
 const Section1: React.FC<Section1Props> = ({
@@ -495,6 +495,8 @@ const Section1: React.FC<Section1Props> = ({
 	timestamp,
 	setTimestamp,
 	setRenderedHitObjects,
+	mode,
+	setMode,
 }) => {
 	const [normalUrl, setNormalUrl] = useState<string>(normalHitSound);
 	const [clapUrl, setClapUrl] = useState<string>(clapHitSound);
@@ -508,8 +510,8 @@ const Section1: React.FC<Section1Props> = ({
 	const [laneHeight, setLaneHeight] = useState<number | null>(null);
 	const [mouseX, setMouseX] = useState<number>(0);
 	const [mouseY, setMouseY] = useState<number>(0);
-	const [mode, setMode] = useState<EditMode>(EditMode.Selection);
 	const [dragStartPosition, setDragStartPosition] = useState<[number, number] | null>(null);
+	// ^ this is NOT (mouseX, mouseY), it is (mouseX, timestamp) where timestamp is in milliseconds
 	const [selectedHitObjects, setSelectedHitObjects] = useState<Set<HitObject> | null>(null);
 	
 	const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -531,7 +533,7 @@ const Section1: React.FC<Section1Props> = ({
 		let nextHitObjects = new Array<HitObject>();
 		
 		const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
-		const bpm = currentTimingPoint.bpmUnlimited;
+		const bpm = Math.max(currentTimingPoint.bpmUnlimited, 0);
 		const currentDifficultyPoint = beatmap.controlPoints.difficultyPointAt(timestamp);
 		const sliderVelocity = currentDifficultyPoint.sliderVelocityUnlimited;
 		const nextTimings = timingPoints.slice(timingPoints.indexOf(currentTimingPoint) + 1);
@@ -859,14 +861,14 @@ const Section1: React.FC<Section1Props> = ({
 									
 									const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
 									const startingPoint = currentTimingPoint.startTime < timestamp ? currentTimingPoint.startTime : 0;
-									let beatStep = 60_000 / currentTimingPoint.bpmUnlimited / beatSnapDivisor;
+									let beatStep = 60_000 / Math.max(currentTimingPoint.bpmUnlimited, 0) / beatSnapDivisor;
 									let lineIndex = 0;
 									
 									let closestTime = targetMillisecond;
 									let closestDistance = Infinity;
 									while (true) {
 										const lineTime = startingPoint + lineIndex * beatStep;
-										const yPosition = yPositionFromTimestampEditor(timestamp, lineTime, scrollSpeed, laneHeight, hitPosition);
+										const yPosition = yPositionFromMillisecondEditor(timestamp, lineTime, scrollSpeed, laneHeight, hitPosition);
 										if (yPosition < -laneHeight) {
 											break;
 										}
@@ -900,10 +902,27 @@ const Section1: React.FC<Section1Props> = ({
 							break;
 						}
 						case EditMode.Selection: {
-							setDragStartPosition(event.type === 'mousedown' ? [event.clientX, event.clientY] : null);
 							if (event.type === 'mousedown') {
-								setSelectedHitObjects(null);
+								for (const [, [laneCanvas]] of editCanvasRefs.current) {
+									if (event.target === laneCanvas) {
+										const laneRect = laneCanvas.getBoundingClientRect();
+										const millisecond = millisecondFromYPositionEditor(
+											timestamp,
+											event.clientY - laneRect.top,
+											userOptions.scrollSpeed,
+											laneRect.height,
+											userOptions.hitPosition,
+										);
+										
+										setDragStartPosition([event.clientX, millisecond]);
+										setSelectedHitObjects(null);
+										
+										return;
+									}
+								}
 							}
+							
+							setDragStartPosition(null);
 							
 							break;
 						}

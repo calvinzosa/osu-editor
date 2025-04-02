@@ -23,5 +23,5 @@ export const DefaultUserOptions: UserOptions = {
 	hitPosition: 420,
 	playBackSpeed: 1,
 	speedAdjustsPitch: false,
-	laneWidthPercent: 27.5,
+	laneWidthPercent: 25,
 }

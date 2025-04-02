@@ -6,7 +6,7 @@
 	gap: 0;
 	
 	> .section {
-		border: 0 solid black;
+		border: 0 solid hsl(0, 0%, 35%);
 		padding: 10px;
 	}
 	
@@ -21,6 +21,7 @@
 		border-width: 1px 1px 0 0;
 		position: relative;
 		background-color: hsl(0, 0%, 30%);
+		overflow-y: hidden;
 		
 		> .hitObjectEditor {
 			display: flex;

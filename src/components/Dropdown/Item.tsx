@@ -8,7 +8,7 @@ interface ItemProps {
 const DropdownItem: React.FC<ItemProps> = ({ action, children }) => {
 	return (
 		<button
-			className={'item'}
+			className={'item noStyle'}
 			onClick={action}
 		>
 			{children}

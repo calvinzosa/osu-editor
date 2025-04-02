@@ -94,7 +94,7 @@ export function calculateActualNoteSpeed(scrollSpeed: number, bpm: number, slide
 
 // pretty sure this doesn't work with targetMilliseconds that are less than the current timestamp lol, this
 // is probably why there are a bunch of lines under the receptors/jugdement line in the preview
-export function yPositionFromTimestamp(
+export function yPositionFromMillisecond(
 	timestamp: number,
 	targetMillisecond: number,
 	scrollSpeed: number,
@@ -143,7 +143,7 @@ export function yPositionFromTimestamp(
 	}
 }
 
-export function yPositionFromTimestampEditor(timestamp: number, targetMillisecond: number, scrollSpeed: number, laneHeight: number, hitPosition: number) {
+export function yPositionFromMillisecondEditor(timestamp: number, targetMillisecond: number, scrollSpeed: number, laneHeight: number, hitPosition: number) {
 	const movementHeight = laneHeight * (hitPosition / 480);
 	const currentSpeed = calculateActualNoteSpeed(scrollSpeed, 60, 1) * 2;
 	return movementHeight - (targetMillisecond - timestamp) / 1_000 * currentSpeed;

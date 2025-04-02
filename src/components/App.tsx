@@ -10,7 +10,7 @@ const App: React.FC = () => {
 	const location = useLocation();
 	
 	useEffect(() => {
-		console.clear();
+		// console.clear();
 	}, [location.pathname]);
 	
 	useEffect(() => {

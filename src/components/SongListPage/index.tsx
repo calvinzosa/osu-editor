@@ -33,8 +33,10 @@ const BeatmapItem: React.FC<BeatmapItemProps> = ({ beatmapPath, difficulties }) 
 	return (
 		<>
 			<legend>{legend}</legend>
-			<OpenExplorer filePath={beatmapPath} />
-			<button onClick={() => setLoadAudio((loadAudio) => !loadAudio)}>{loadAudio ? 'Hide audio' : 'Show audio'}</button>
+			<div className={'buttons'}>
+				<OpenExplorer filePath={beatmapPath} />
+				<button onClick={() => setLoadAudio((loadAudio) => !loadAudio)}>{loadAudio ? 'Hide audio' : 'Show audio'}</button>
+			</div>
 			{loadAudio && (
 				<audio controls>
 					<source src={convertFileSrc(audioPath)} type={`audio/${getExtension(audioPath)}`} />

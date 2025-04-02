@@ -41,14 +41,23 @@ const Section2: React.FC<Section2Props> = ({ beatmap, timestamp, renderedHitObje
 	
 	return (
 		<div className={'section s2'}>
-			<p>BPM: {beatmapInfo.bpm.toFixed(2)}</p>
-			<p>SliderVelocity: {beatmapInfo.sliderVelocity.toFixed(2)}x</p>
-			<p>
-				Rendered HitObjects:&nbsp;
-				{beatmapInfo.renderedHitObjects.normal.toString().padStart(3, '.')} Normal / {beatmapInfo.renderedHitObjects.long.toString().padStart(3, '.')} Long
+			<p title={'Beats per minute or the tempo'}>
+				BPM:&nbsp;{beatmapInfo.bpm.toFixed(2)}
 			</p>
-			<p>Keys/s: {beatmapInfo.keysPerSecond.toString().padStart(3, '.')}</p>
-			<p>KiaiMode: {beatmapInfo.kiai ? 'true' : 'false'}</p>
+			<p title={'Velocity multiplier for hit objects (preview only)'}>
+				SliderVelocity:&nbsp;{beatmapInfo.sliderVelocity.toFixed(2)}x
+			</p>
+			<p title={'Number of rendered hit objects'}>
+				Rendered&nbsp;HitObjects:&nbsp;
+				{beatmapInfo.renderedHitObjects.normal.toString().padStart(3, '.')}&nbsp;Normal&nbsp;
+				/&nbsp;{beatmapInfo.renderedHitObjects.long.toString().padStart(3, '.')}&nbsp;Long
+			</p>
+			<p title={'Keys per second (number of hit objects in the past 1,000 milliseconds)'}>
+				Keys/s:&nbsp;{beatmapInfo.keysPerSecond.toString().padStart(3, '.')}
+			</p>
+			<p title={'Whether kiai mode is on at the current timestamp'}>
+				KiaiMode:&nbsp;{beatmapInfo.kiai ? 'true' : 'false'}
+			</p>
 		</div>
 	);
 };

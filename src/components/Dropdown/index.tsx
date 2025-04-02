@@ -51,7 +51,7 @@ const DropdownContainer: React.FC<DropdownProps> = ({ label, openTo, children, o
 	
 	return (
 		<div className={`dropdown ${openTo} ${open ? 'open' : ''}`}>
-			<button className={'button'} ref={buttonRef}>{label}</button>
+			<button className={'button noStyle'} ref={buttonRef}>{label}</button>
 			<div className={'contents'} ref={contentsRef}>{children}</div>
 		</div>
 	);

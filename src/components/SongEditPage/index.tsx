@@ -7,6 +7,7 @@ import DropdownContainer, { DropdownItem } from '@/components/Dropdown';
 import Editor from '@/components/Editor';
 
 import { beatmapDecoder, initializeBeatmap, OsuBeatmap } from '@/utils/Beatmap';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
 interface TopbarProps {
 	beatmapPath: string | undefined;
@@ -21,7 +22,18 @@ const Topbar: React.FC<TopbarProps> = ({ beatmapPath }) => {
 				<DropdownContainer label={'File'} openTo={'south'}>
 					<DropdownItem action={() => {}}>Save... [ctrl+s]</DropdownItem>
 					<DropdownItem action={() => {}}>Save as... [ctrl+shift+s]</DropdownItem>
-					<DropdownItem action={() => navigate('/')}>Exit [ctrl+esc]</DropdownItem>
+					<DropdownItem
+						action={() => {
+							if (beatmapPath === undefined) {
+								return;
+							}
+							
+							revealItemInDir(beatmapPath);
+						}}
+					>
+						Open beatmap folder in Explorer [ctrl+shift+e]
+					</DropdownItem>
+					<DropdownItem action={() => navigate('/')}>Exit [ctrl+f1]</DropdownItem>
 				</DropdownContainer>
 			</div>
 			<div className={'info'}>

@@ -36,6 +36,31 @@ main {
 	margin: 0;
 	padding: 10px;
 	height: calc(100% - 20px);
+	background-color: hsl(0, 0%, 16%);
+	color: hsl(0, 0%, 100%);
+}
+
+.appHeader {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 2rem;
+	background-color: hsl(333, 83%, 66%);
+	color: hsl(0, 0%, 100%);
+	position: absolute;
+	left: 0;
+	top: 0;
+	right: 0;
+	height: 40px;
+	user-select: none;
+}
+
+.appVersion {
+	text-align: center;
+	margin-top: -20px;
+	color: hsl(0, 0%, 50%);
+	font-weight: bold;
+	user-select: none;
 }
 
 p, h1, h2, h3, h4, h5, h6, a {
@@ -52,6 +77,49 @@ p[title] {
 
 button, input {
 	font-family: 'Torus';
+}
+
+button:not(.noStyle) {
+	border-radius: 100px;
+	border: none;
+	outline: none;
+	transition: background-color 150ms;
+	
+	&[disabled] {
+		background-color: hsl(333, 83%, 56%);
+		color: hsl(0, 0%, 70%);
+	}
+	
+	&:not([disabled]) {
+		background-color: hsl(333, 83%, 66%);
+		color: hsl(0, 0%, 100%);
+		
+		&:hover {
+			background-color: hsl(333, 83%, 76%);
+		}
+	}
+}
+
+input {
+	border-radius: 3px;
+	background-color: hsl(0, 0%, 26%);
+	border: 1px solid hsl(0, 0%, 36%);
+	color: hsl(0, 0%, 100%);
+	transition: border-color 150ms, background-color 150ms;
+	
+	&:hover {
+		background-color: hsl(0, 0%, 36%);
+	}
+	
+	&:focus {
+		outline: none;
+		background-color: hsl(0, 0%, 40%);
+		
+		&:not([readonly]) {
+			background-color: hsl(0, 0%, 46%);
+			border-color: hsl(0, 0%, 56%);
+		}
+	}
 }
 
 a {
@@ -71,8 +139,8 @@ img {
 	border-radius: 100px;
 	
 	&::after {
-		border-radius: 100px;
 		content: '';
+		border-radius: 100px;
 		position: absolute;
 		left: 0;
 		top: 0;
@@ -87,4 +155,8 @@ img {
 	filter: brightness(0);
 	width: calc(2rem * (825 / 256));
 	height: 2rem;
+}
+
+fieldset {
+	border-radius: 5px;
 }

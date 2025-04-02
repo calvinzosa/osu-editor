@@ -1,0 +1,33 @@
+.error {
+	display: flex;
+	flex-direction: column;
+	padding-top: 48px;
+	gap: 8px;
+	
+	> h2 {
+		text-align: center;
+	}
+	
+	fieldset {
+		display: flex;
+		flex-direction: column;
+		flex-grow: 1;
+		gap: 5px;
+		
+		> textarea {
+			height: fit-content;
+			resize: none;
+			flex-grow: 1;
+		}
+	}
+	
+	> .buttons {
+		display: flex;
+		flex-direction: row;
+		gap: 5px;
+		
+		> button {
+			flex-grow: 1;
+		}
+	}
+}
