@@ -8,6 +8,16 @@ export enum EditMode {
 	Delete = 2,
 }
 
+export interface Coordinate {
+	x: number;
+	y: number;
+}
+
+export interface Dimensions {
+	width: number;
+	height: number;
+}
+
 export interface UserOptions {
 	scrollSpeed: number;
 	beatSnapDivisor: number;

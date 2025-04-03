@@ -117,19 +117,19 @@ export function getClosestTime(beatmap: OsuBeatmap, timestamp: number, targetMil
 		lineIndex++;
 	}
 
-	return closestTime;
+	return Math.round(closestTime);
 }
 
 export function addHitObject(beatmap: OsuBeatmap, columnIndex: number, columnCount: number, targetMillisecond: number) {
 	const newHitObject = new OsuParsers.HittableObject();
 	newHitObject.hitType = HitType.Normal;
-	newHitObject.startTime = targetMillisecond;
+	newHitObject.startTime = Math.round(targetMillisecond);
 	newHitObject.startX = (512 * columnIndex) / columnCount;
 	newHitObject.startY = 192;
 	
 	beatmap.hitObjects.push(newHitObject);
 	beatmap.hitObjects.sort((a, b) => a.startTime - b.startTime);
-	console.log('added hitObject at', targetMillisecond);
+	console.log('added hitObject at', Math.round(targetMillisecond));
 }
 
 export function calculateActualNoteSpeed(scrollSpeed: number, bpm: number, sliderVelocity: number): number {
@@ -152,7 +152,7 @@ export function yPositionFromMillisecond(
 	nextDifficulties: Array<DifficultyPoint>,
 ): number {
 	const movementHeight = laneHeight * (hitPosition / 480);
-	let remainingTime = targetMillisecond - timestamp;
+	let remainingTime = Math.round(targetMillisecond - timestamp);
 	let distanceTravelled = 0;
 	let nextTimingPointIndex = 0;
 	let nextDifficultyPointIndex = 0;
@@ -192,7 +192,7 @@ export function yPositionFromMillisecond(
 export function yPositionFromMillisecondEditor(timestamp: number, targetMillisecond: number, laneHeight: number, { hitPosition, scrollSpeed }: UserOptions) {
 	const movementHeight = laneHeight * (hitPosition / 480);
 	const currentSpeed = calculateActualNoteSpeed(scrollSpeed, 60, 1) * 2;
-	return movementHeight - (targetMillisecond - timestamp) / 1_000 * currentSpeed;
+	return movementHeight - Math.round(targetMillisecond - timestamp) / 1_000 * currentSpeed;
 }
 
 export function millisecondFromYPositionEditor(timestamp: number, yPosition: number, laneHeight: number, { hitPosition, scrollSpeed }: UserOptions) {
