@@ -1,13 +1,10 @@
-import { memo } from 'react';
+import { DefaultUserOptions } from '@/utils/Types';
 
-import { DefaultUserOptions, ReactSet, UserOptions } from '@/utils/Types';
+import { useEditor } from '../Provider';
 
-interface Section3Props {
-	userOptions: UserOptions;
-	setUserOptions: ReactSet<UserOptions>;
-}
-
-const Section3: React.FC<Section3Props> = ({ userOptions, setUserOptions }) => {
+const Section3: React.FC = () => {
+	const { userOptions, setUserOptions } = useEditor();
+	
 	return (
 		<div className={'section s3'}>
 			<div className={'userOption'}>
@@ -62,7 +59,7 @@ const Section3: React.FC<Section3Props> = ({ userOptions, setUserOptions }) => {
 			</div>
 			<div className={'userOption'}>
 				<p title={'The hit position of the receptors'}>
-					HitPosition:&nbsp;{userOptions.hitPosition}/480&nbsp;({(userOptions.hitPosition / 480 * 100).toFixed(2)}%)
+					HitPosition:&nbsp;{userOptions.hitPosition}/480
 				</p>
 				<input
 					type={'range'}
@@ -158,4 +155,4 @@ const Section3: React.FC<Section3Props> = ({ userOptions, setUserOptions }) => {
 	);
 };
 
-export default memo(Section3);
+export default Section3;

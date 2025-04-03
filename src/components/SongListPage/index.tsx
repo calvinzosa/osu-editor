@@ -40,7 +40,7 @@ const BeatmapItem: React.FC<BeatmapItemProps> = ({ beatmapPath, difficulties }) 
 			{loadAudio && (
 				<audio controls>
 					<source src={convertFileSrc(audioPath)} type={`audio/${getExtension(audioPath)}`} />
-					&lt;Audio playback is not supported&gt;
+					Audio playback controls are not supported in your browser
 				</audio>
 			)}
 			<div className={'difficulties'}>
@@ -49,7 +49,7 @@ const BeatmapItem: React.FC<BeatmapItemProps> = ({ beatmapPath, difficulties }) 
 					return (
 						<fieldset className={'difficulty'} key={j}>
 							<div className={'info'}>
-								<h3>{beatmap.metadata.version || '<No Version>'}</h3>
+								<h3>{beatmap.metadata.version || <>&nbsp;</>}</h3>
 								<p>BPM: {beatmap.bpm.toFixed(2)}</p>
 								<p>Game Mode: osu!{GameMode[beatmap.mode].toLowerCase()}</p>
 								<p>

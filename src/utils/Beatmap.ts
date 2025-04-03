@@ -1,12 +1,13 @@
-import type { ReactSet } from './Types';
+import { useEffect, useRef } from 'react';
+
 
 import { readDir, readFile } from '@tauri-apps/plugin-fs';
 
 import * as OsuParsers from 'osu-parsers';
-import { TimingPoint, HitType, DifficultyPoint, HitSound, ControlPointType, ControlPoint } from 'osu-classes';
+import { TimingPoint, HitType, DifficultyPoint, HitSound, ControlPointType, ControlPoint, HitObject } from 'osu-classes';
 
-import { getExtension, joinPaths } from './File';
-import { useEffect, useRef } from 'react';
+import type { ReactSet, UserOptions } from '@/utils/Types';
+import { getExtension, joinPaths } from '@/utils/File';
 
 export const beatmapDecoder = new OsuParsers.BeatmapDecoder();
 
@@ -85,6 +86,14 @@ export function isDifficultyPoint(controlPoint: ControlPoint): controlPoint is D
 	return controlPoint.pointType === ControlPointType.DifficultyPoint;
 }
 
+export function isNormalHitObject(hitObject: HitObject): boolean {
+	return (hitObject.hitType & HitType.Normal) !== 0;
+}
+
+export function isLongHitObject(hitObject: HitObject): hitObject is OsuParsers.HoldableObject {
+	return (hitObject.hitType & HitType.Hold) !== 0;
+}
+
 export function calculateActualNoteSpeed(scrollSpeed: number, bpm: number, sliderVelocity: number): number {
 	const bps = bpm / 60;
 	const totalScrollSpeed = sliderVelocity * scrollSpeed;
@@ -97,11 +106,10 @@ export function calculateActualNoteSpeed(scrollSpeed: number, bpm: number, slide
 export function yPositionFromMillisecond(
 	timestamp: number,
 	targetMillisecond: number,
-	scrollSpeed: number,
 	bpm: number,
 	sliderVelocity: number,
 	laneHeight: number,
-	hitPosition: number,
+	{ hitPosition, scrollSpeed }: UserOptions,
 	nextTimings: Array<TimingPoint>,
 	nextDifficulties: Array<DifficultyPoint>,
 ): number {
@@ -143,13 +151,13 @@ export function yPositionFromMillisecond(
 	}
 }
 
-export function yPositionFromMillisecondEditor(timestamp: number, targetMillisecond: number, scrollSpeed: number, laneHeight: number, hitPosition: number) {
+export function yPositionFromMillisecondEditor(timestamp: number, targetMillisecond: number, laneHeight: number, { hitPosition, scrollSpeed }: UserOptions) {
 	const movementHeight = laneHeight * (hitPosition / 480);
 	const currentSpeed = calculateActualNoteSpeed(scrollSpeed, 60, 1) * 2;
 	return movementHeight - (targetMillisecond - timestamp) / 1_000 * currentSpeed;
 }
 
-export function millisecondFromYPositionEditor(timestamp: number, yPosition: number, scrollSpeed: number, laneHeight: number, hitPosition: number) {
+export function millisecondFromYPositionEditor(timestamp: number, yPosition: number, laneHeight: number, { hitPosition, scrollSpeed }: UserOptions) {
 	const currentSpeed = calculateActualNoteSpeed(scrollSpeed, 60, 1);
 	return Math.round((1000 * ((laneHeight * hitPosition) / 480 - yPosition)) / (2 * currentSpeed) + timestamp);
 	// just moved around the equation from yPositionFromTimestampEditor to get this

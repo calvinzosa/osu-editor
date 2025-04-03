@@ -1,10 +1,4 @@
-import { OsuBeatmap } from '@/utils/Beatmap';
-
-interface Section2Props {
-	beatmap: OsuBeatmap;
-	timestamp: number;
-	renderedHitObjects: BeatmapInfo['renderedHitObjects'];
-}
+import { useEditor } from '../Provider';
 
 interface BeatmapInfo {
 	bpm: number;
@@ -17,7 +11,9 @@ interface BeatmapInfo {
 	};
 }
 
-const Section2: React.FC<Section2Props> = ({ beatmap, timestamp, renderedHitObjects }) => {
+const Section2: React.FC = () => {
+	const { beatmap, timestamp, renderedHitObjects } = useEditor();
+	
 	const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
 	const bpm = currentTimingPoint?.bpmUnlimited ?? 60;
 	
@@ -44,10 +40,10 @@ const Section2: React.FC<Section2Props> = ({ beatmap, timestamp, renderedHitObje
 			<p title={'Beats per minute or the tempo'}>
 				BPM:&nbsp;{beatmapInfo.bpm.toFixed(2)}
 			</p>
-			<p title={'Velocity multiplier for hit objects (preview only)'}>
+			<p title={'Velocity multiplier for hit objects (shown in preview only)'}>
 				SliderVelocity:&nbsp;{beatmapInfo.sliderVelocity.toFixed(2)}x
 			</p>
-			<p title={'Number of rendered hit objects'}>
+			<p title={'Number of rendered hit objects in the preview'}>
 				Rendered&nbsp;HitObjects:&nbsp;
 				{beatmapInfo.renderedHitObjects.normal.toString().padStart(3, '.')}&nbsp;Normal&nbsp;
 				/&nbsp;{beatmapInfo.renderedHitObjects.long.toString().padStart(3, '.')}&nbsp;Long

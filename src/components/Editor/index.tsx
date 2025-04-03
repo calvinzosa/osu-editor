@@ -1,41 +1,39 @@
-import { useRef } from 'react';
+import { Choose, When, Otherwise } from 'tsx-control-statements/components';
 
 import './index.scss';
 
-import ManiaEditor from './Mania';
-import LoadingGif from '@/assets/loading.gif';
-
 import { GameMode, OsuBeatmap } from '@/utils/Beatmap';
+import EditorProvider from './Provider';
+import ManiaEditor from './Mania';
+
+import LoadingGif from '@/assets/loading.gif';
 
 interface EditorProps {
 	beatmap: OsuBeatmap | null;
 }
 
 const Editor: React.FC<EditorProps> = ({ beatmap }) => {
-	const sectionRef = useRef<HTMLDivElement | null>(null);
-	
-	switch (beatmap?.mode) {
-		case GameMode.Mania: {
-			return (
-				<ManiaEditor beatmap={beatmap} sectionRef={sectionRef} />
-			);
-		}
-		case GameMode.Standard:
-		case GameMode.Taiko:
-		case GameMode.Catch: {
-			return (
-				<h2>osu! game mode not supported: osu!{GameMode[beatmap?.mode].toLowerCase()}</h2>
-			);
-		}
-		case undefined: {
-			return (
-				<div className={'loadingBeatmap'}>
-					<h2>Loading beatmap...</h2>
-					<img className={'loadingGif'} src={LoadingGif} />
-				</div>
-			);
-		}
+	if (!beatmap) {
+		return (
+			<div className={'loadingBeatmap'}>
+				<h2>Loading beatmap...</h2>
+				<img className={'loadingGif'} src={LoadingGif} />
+			</div>
+		);
 	}
+	
+	return (
+		<EditorProvider beatmap={beatmap}>
+			<Choose>
+				<When condition={beatmap.mode === GameMode.Mania}>
+					<ManiaEditor />
+				</When>
+				<Otherwise>
+					<h2>osu! game mode not supported: osu!{GameMode[beatmap.mode].toLowerCase()}</h2>
+				</Otherwise>
+			</Choose>
+		</EditorProvider>
+	);
 };
 
 export default Editor;

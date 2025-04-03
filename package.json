@@ -1,7 +1,7 @@
 {
 	"name": "osu-editor",
 	"private": true,
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
@@ -18,7 +18,8 @@
 		"react": "^18.3.1",
 		"react-dom": "^18.3.1",
 		"react-router-dom": "^7.4.1",
-		"sass": "^1.86.0"
+		"sass": "^1.86.0",
+		"tsx-control-statements": "^5.1.1"
 	},
 	"devDependencies": {
 		"@tauri-apps/cli": "^2",

@@ -5,8 +5,10 @@ import { exists, readDir } from '@tauri-apps/plugin-fs';
 import { DifficultyPoint, HitObject, HitSound, HitType, TimingPoint } from 'osu-classes';
 import { HoldableObject, HittableObject } from 'osu-parsers';
 
+import { useEditor } from '../Provider';
+
 import { clamp, intToBits } from '@/utils';
-import { yPositionFromMillisecond, yPositionFromMillisecondEditor, OsuBeatmap, useHitsound, millisecondFromYPositionEditor } from '@/utils/Beatmap';
+import { yPositionFromMillisecond, yPositionFromMillisecondEditor, OsuBeatmap, useHitsound, millisecondFromYPositionEditor, isLongHitObject, isNormalHitObject } from '@/utils/Beatmap';
 import { getExtension, getFileName, joinPaths } from '@/utils/File';
 import { EditMode, ReactSet, UserOptions } from '@/utils/Types';
 
@@ -39,17 +41,17 @@ function renderPreviewContext(
 	offscreenContext: OffscreenCanvasRenderingContext2D,
 	laneWidth: number,
 	laneHeight: number,
-	hitPosition: number,
 	timestamp: number,
 	columnCount: number,
 	columnIndex: number,
-	scrollSpeed: number,
 	bpm: number,
 	sliderVelocity: number,
+	userOptions: UserOptions,
 	nextTimings: Array<TimingPoint>,
 	nextDiffs: Array<DifficultyPoint>,
 	nextHitObjects: Array<HitObject>,
 ): [number, number] {
+	const { hitPosition } = userOptions;
 	const offscreenCanvas = offscreenContext.canvas;
 	const circleRadius = Math.round(laneWidth / 2);
 	const circleX = circleRadius;
@@ -66,7 +68,7 @@ function renderPreviewContext(
 	for (let i = 0; i < totalLines; i++) {
 		const lineTime = i * snap;
 		
-		const yPosition = yPositionFromMillisecond(timestamp, lineTime, scrollSpeed, bpm, sliderVelocity, laneHeight, hitPosition, nextTimings, nextDiffs);
+		const yPosition = yPositionFromMillisecond(timestamp, lineTime, bpm, sliderVelocity, laneHeight, userOptions, nextTimings, nextDiffs);
 		if (yPosition <= 0) {
 			break;
 		}
@@ -115,11 +117,10 @@ function renderPreviewContext(
 			const yPosition = yPositionFromMillisecond(
 				timestamp,
 				hitObject.startTime,
-				scrollSpeed,
 				bpm,
 				sliderVelocity,
 				laneHeight,
-				hitPosition,
+				userOptions,
 				nextTimings,
 				nextDiffs,
 			);
@@ -145,11 +146,10 @@ function renderPreviewContext(
 				yPositionFromMillisecond(
 					timestamp,
 					holdObject.startTime,
-					scrollSpeed,
 					bpm,
 					sliderVelocity,
 					laneHeight,
-					hitPosition,
+					userOptions,
 					nextTimings,
 					nextDiffs,
 				),
@@ -158,11 +158,10 @@ function renderPreviewContext(
 			const yPositionTail = yPositionFromMillisecond(
 				timestamp,
 				holdObject.endTime,
-				scrollSpeed,
 				bpm,
 				sliderVelocity,
 				laneHeight,
-				hitPosition,
+				userOptions,
 				nextTimings,
 				nextDiffs,
 			);
@@ -200,7 +199,6 @@ function renderEditContext(
 	offscreenContext: OffscreenCanvasRenderingContext2D,
 	laneWidth: number,
 	laneHeight: number,
-	hitPosition: number,
 	timestamp: number,
 	columnIndex: number,
 	nextHitObjects: Array<HitObject>,
@@ -212,9 +210,11 @@ function renderEditContext(
 	mode: EditMode,
 	dragStartPosition: [number, number] | null,
 	currentSelectedHitObjects: Set<HitObject> | null,
+	setHoveredHitObject: ReactSet<HitObject | null>,
+	setHoveredSide: ReactSet<'head' | 'tail'>,
+	isGrabbing: boolean,
 ): Set<HitObject> {
-	const scrollSpeed = userOptions.scrollSpeed;
-	const beatSnapDivisor = userOptions.beatSnapDivisor;
+	const { beatSnapDivisor, hitPosition } = userOptions;
 	const columnCount = beatmap.difficulty.circleSize;
 	const offscreenCanvas = offscreenContext.canvas;
 	
@@ -263,7 +263,7 @@ function renderEditContext(
 	offscreenContext.beginPath();
 	while (true) {
 		const lineTimestamp = startingPoint + lineIndex * beatStep;
-		const yPosition = yPositionFromMillisecondEditor(timestamp, lineTimestamp, scrollSpeed, laneHeight, hitPosition);
+		const yPosition = yPositionFromMillisecondEditor(timestamp, lineTimestamp, laneHeight, userOptions);
 		if (yPosition < 0) {
 			break;
 		}
@@ -300,7 +300,7 @@ function renderEditContext(
 		let lineIndex = 0;
 		while (true) {
 			const lineTimestamp = startingPoint + lineIndex * beatStep;
-			const yPosition = yPositionFromMillisecondEditor(timestamp, lineTimestamp, scrollSpeed, laneHeight, hitPosition);
+			const yPosition = yPositionFromMillisecondEditor(timestamp, lineTimestamp, laneHeight, userOptions);
 			if (yPosition < 0) {
 				break;
 			}
@@ -331,7 +331,7 @@ function renderEditContext(
 	
 	const laneRect = canvas.getBoundingClientRect();
 	const [startX, dragTimestamp] = dragStartPosition ?? [Infinity, Infinity];
-	const dragY = isFinite(dragTimestamp) ? yPositionFromMillisecondEditor(timestamp, dragTimestamp, scrollSpeed, laneHeight, hitPosition) : Infinity;
+	const dragY = isFinite(dragTimestamp) ? yPositionFromMillisecondEditor(timestamp, dragTimestamp, laneHeight, userOptions) : Infinity;
 	
 	const minX = Math.min(startX, mouseX) - laneRect.left;
 	const maxX = Math.max(startX, mouseX) - laneRect.left;
@@ -340,6 +340,7 @@ function renderEditContext(
 	
 	const dragAffectsLane = 0 < maxX && minX < laneRect.width;
 	const selectedHitObjects = new Set<HitObject>();
+	const renderedHitObjects = new Set<[HitObject, number, number]>();
 	for (const hitObject of nextHitObjects) {
 		const objectColumn = Math.floor(hitObject.startX * columnCount / 512);
 		if (columnIndex !== objectColumn) {
@@ -347,8 +348,8 @@ function renderEditContext(
 		}
 		
 		let yPosition: number | null = null;
-		if ((hitObject.hitType & HitType.Normal) !== 0) {
-			yPosition = yPositionFromMillisecondEditor(timestamp, hitObject.startTime, scrollSpeed, laneHeight, hitPosition);
+		if (isNormalHitObject(hitObject)) {
+			yPosition = yPositionFromMillisecondEditor(timestamp, hitObject.startTime, laneHeight, userOptions);
 			if (yPosition >= 0) {
 				let image = maniaNote1;
 				if (columnCount === 4 && (columnIndex === 1 || columnIndex === 2)) {
@@ -356,6 +357,7 @@ function renderEditContext(
 				}
 				
 				offscreenContext.drawImage(image, barX, yPosition - barHeight, laneWidth, barHeight);
+				renderedHitObjects.add([hitObject, yPosition, NaN]);
 				
 				if ((mode === EditMode.Selection && dragStartPosition !== null && dragAffectsLane && minY < yPosition && yPosition - barHeight < maxY)
 				|| (currentSelectedHitObjects !== null && currentSelectedHitObjects.has(hitObject))) {
@@ -372,10 +374,9 @@ function renderEditContext(
 			} else {
 				yPosition = null;
 			}
-		} else if ((hitObject.hitType & HitType.Hold) !== 0) {
-			const holdObject = hitObject as HoldableObject;
-			const yPositionHead = yPositionFromMillisecondEditor(timestamp, holdObject.startTime, scrollSpeed, laneHeight, hitPosition);
-			const yPositionTail = yPositionFromMillisecondEditor(timestamp, holdObject.endTime, scrollSpeed, laneHeight, hitPosition);
+		} else if (isLongHitObject(hitObject)) {
+			const yPositionHead = yPositionFromMillisecondEditor(timestamp, hitObject.startTime, laneHeight, userOptions);
+			const yPositionTail = yPositionFromMillisecondEditor(timestamp, hitObject.endTime, laneHeight, userOptions);
 			
 			if (yPositionHead >= 0) {
 				yPosition = yPositionHead;
@@ -393,6 +394,7 @@ function renderEditContext(
 				offscreenContext.drawImage(imageHead, barX, yPositionHead - barHeight, laneWidth, barHeight);
 				offscreenContext.drawImage(imageHead, barX, yPositionTail - barHeight, laneWidth, barHeight);
 				offscreenContext.drawImage(imageBody, barX, yPositionTail, laneWidth, yPositionHead - yPositionTail - barHeight);
+				renderedHitObjects.add([hitObject, yPositionHead, yPositionTail]);
 				
 				if ((mode === EditMode.Selection && dragStartPosition !== null && dragAffectsLane && minY < yPositionHead && yPositionTail - barHeight < maxY)
 				|| (currentSelectedHitObjects !== null && currentSelectedHitObjects.has(hitObject))) {
@@ -438,7 +440,63 @@ function renderEditContext(
 	
 	switch (mode) {
 		case EditMode.HitObject: {
-			if (laneRect.left < mouseX && mouseX < laneRect.right && laneRect.top < mouseY && mouseY < laneRect.bottom) {
+			canvas.style.cursor = 'cell';
+			if (isGrabbing) {
+				canvas.style.cursor = 'grabbing';
+				break;
+			}
+			
+			// laneRect.left < mouseX && mouseX < laneRect.right && laneRect.top < mouseY && mouseY < laneRect.bottom
+			if (laneRect.left >= mouseX || mouseX >= laneRect.right || laneRect.top >= mouseY || mouseY >= laneRect.bottom) {
+				break;
+			}
+			
+			let canAddHitObject = true;
+			let hoveredHitObject: HitObject | null = null;
+			let hoveredSide: 'head' | 'tail' = 'head';
+			for (const data of renderedHitObjects) {
+				const [hitObject] = data;
+				
+				if (isNormalHitObject(hitObject)) {
+					const [, yPosition] = data;
+					
+					if (mouseY < yPosition + barHeight && mouseY > yPosition) {
+						hoveredHitObject = hitObject;
+						break;
+					}
+				} else if (isLongHitObject(hitObject)) {
+					const [, yPositionHead, yPositionTail] = data;
+					
+					if (mouseY < yPositionHead + barHeight && mouseY > yPositionHead) {
+						hoveredHitObject = hitObject;
+						hoveredSide = 'head';
+						break;
+					} else if (mouseY < yPositionTail + barHeight && mouseY > yPositionTail) {
+						hoveredHitObject = hitObject;
+						hoveredSide = 'tail';
+						break;
+					} else if (mouseY < yPositionHead + barHeight && mouseY > yPositionTail + barHeight) {
+						canAddHitObject = false;
+						break;
+					}
+				}
+			}
+			
+			if (!canAddHitObject) {
+				canvas.style.cursor = 'not-allowed';
+				break;
+			}
+			
+			setHoveredHitObject(hoveredHitObject);
+			setHoveredSide(hoveredSide);
+			
+			if (hoveredHitObject !== null) {
+				canvas.style.cursor = 'grab';
+				
+				if (isLongHitObject(hoveredHitObject)) {
+					canvas.style.cursor = 'n-resize';
+				}
+			} else {
 				const yPosition = mouseY - laneRect.top;
 				let image = maniaNote1;
 				if (columnCount === 4 && (columnIndex === 1 || columnIndex === 2)) {
@@ -453,6 +511,8 @@ function renderEditContext(
 			break;
 		}
 		case EditMode.Selection: {
+			canvas.style.cursor = 'crosshair';
+			
 			if (dragStartPosition === null) {
 				break;
 			}
@@ -466,38 +526,19 @@ function renderEditContext(
 			
 			break;
 		}
+		case EditMode.Delete: {
+			canvas.style.cursor = 'default';
+			
+			break;
+		}
 	}
 	
 	return selectedHitObjects;
 }
 
-interface Section1Props {
-	beatmap: OsuBeatmap;
-	sectionRef: React.MutableRefObject<HTMLDivElement | null>;
-	musicRef: React.MutableRefObject<HTMLAudioElement | null>;
-	userOptions: UserOptions;
-	isPlaying: boolean;
-	setPlaying: ReactSet<boolean>;
-	timestamp: number;
-	setTimestamp: ReactSet<number>;
-	setRenderedHitObjects: ReactSet<{ normal: number, long: number }>;
-	mode: EditMode;
-	setMode: ReactSet<EditMode>;
-}
-
-const Section1: React.FC<Section1Props> = ({
-	beatmap,
-	sectionRef,
-	musicRef,
-	userOptions,
-	isPlaying,
-	setPlaying,
-	timestamp,
-	setTimestamp,
-	setRenderedHitObjects,
-	mode,
-	setMode,
-}) => {
+const Section1: React.FC = () => {
+	const { beatmap, userOptions, isPlaying, setPlaying, mode, setMode, timestamp, setTimestamp, setRenderedHitObjects, musicRef } = useEditor();
+	
 	const [normalUrl, setNormalUrl] = useState<string>(normalHitSound);
 	const [clapUrl, setClapUrl] = useState<string>(clapHitSound);
 	const [finishUrl, setFinishUrl] = useState<string>(finishHitSound);
@@ -505,16 +546,23 @@ const Section1: React.FC<Section1Props> = ({
 	const [changedBeatmap, setChangedBeatmap] = useState<string>('');
 	const playHitSound = useHitsound(normalUrl, clapUrl, finishUrl, whistleUrl);
 	
+	const [mouseX, setMouseX] = useState<number>(0);
+	const [mouseY, setMouseY] = useState<number>(0);
 	const [videoPath, setVideoPath] = useState<string | null>(null);
 	const [laneWidth, setLaneWidth] = useState<number | null>(null);
 	const [laneHeight, setLaneHeight] = useState<number | null>(null);
-	const [mouseX, setMouseX] = useState<number>(0);
-	const [mouseY, setMouseY] = useState<number>(0);
 	const [dragStartPosition, setDragStartPosition] = useState<[number, number] | null>(null);
 	// ^ this is NOT (mouseX, mouseY), it is (mouseX, timestamp) where timestamp is in milliseconds
 	const [selectedHitObjects, setSelectedHitObjects] = useState<Set<HitObject> | null>(null);
+	const [hoveredHitObject, setHoveredHitObject] = useState<HitObject | null>(null);
+	const [hoveredSide, setHoveredSide] = useState<'head' | 'tail'>('head');
+	const [grabbedHitObject, setGrabbedHitObject] = useState<HitObject | null>(null);
+	const [grabbedSide, setGrabbedSide] = useState<'head' | 'tail'>('head');
 	
+	const mainSectionRef = useRef<HTMLDivElement | null>(null);
 	const videoRef = useRef<HTMLVideoElement | null>(null);
+	const shortTimelineRef = useRef<HTMLCanvasElement | null>(null);
+	const shortTimelineContext = useRef<CanvasRenderingContext2D | null>(null);
 	const editCanvasRefs = useRef<Map<number, [HTMLCanvasElement, CanvasRenderingContext2D, OffscreenCanvas, OffscreenCanvasRenderingContext2D]>>(new Map());
 	const previewCanvasRefs = useRef<Map<number, [HTMLCanvasElement, CanvasRenderingContext2D, OffscreenCanvas, OffscreenCanvasRenderingContext2D]>>(new Map());
 	const keyCount = beatmap.difficulty.circleSize;
@@ -526,7 +574,6 @@ const Section1: React.FC<Section1Props> = ({
 			return;
 		}
 		
-		const hitPosition = userOptions.hitPosition;
 		const timingPoints = beatmap.controlPoints.timingPoints;
 		const difficultyPoints = beatmap.controlPoints.difficultyPoints;
 		const hitObjects = beatmap.hitObjects;
@@ -566,24 +613,26 @@ const Section1: React.FC<Section1Props> = ({
 			long: 0,
 		};
 		
-		for (const [i, [, context, offscreenCanvas, offscreenContext]] of previewCanvases) {
+		for (const [columnIndex, [, context, offscreenCanvas, offscreenContext]] of previewCanvases) {
 			offscreenCanvas.width = laneWidth;
 			offscreenCanvas.height = laneHeight;
 			
-			// const hitPosition = (Math.sin((timestamp / Math.PI) / 100 + (i / Math.PI) * 5) + 1) / 2 * (Math.cos(timestamp / Math.PI / 100 + i * 3) * 50) + 400;
+			// userOptions.hitPosition =
+			// 	(Math.sin((timestamp / Math.PI) / 100 + (columnIndex / Math.PI) * 5) + 1) / 2
+			// 	* (Math.cos(timestamp / Math.PI / 100 + columnIndex * 3) * 50)
+			// 	+ 400;
 			// ^ lol
 			
 			const [renderedNormalObjects, renderedLongObjects] = renderPreviewContext(
 				offscreenContext,
 				laneWidth,
 				laneHeight,
-				hitPosition,
 				timestamp,
 				keyCount,
-				i,
-				userOptions.scrollSpeed,
+				columnIndex,
 				bpm,
 				sliderVelocity,
+				userOptions,
 				nextTimings,
 				nextDiffs,
 				nextHitObjects,
@@ -606,7 +655,6 @@ const Section1: React.FC<Section1Props> = ({
 				offscreenContext,
 				laneWidth,
 				laneHeight,
-				hitPosition,
 				timestamp,
 				columnIndex,
 				nextHitObjects,
@@ -617,7 +665,10 @@ const Section1: React.FC<Section1Props> = ({
 				mouseY,
 				mode,
 				dragStartPosition,
-				selectedHitObjects,
+				dragStartPosition === null ? selectedHitObjects : null,
+				setHoveredHitObject,
+				setHoveredSide,
+				grabbedHitObject !== null,
 			);
 			
 			context.drawImage(offscreenCanvas, 0, 0);
@@ -626,18 +677,72 @@ const Section1: React.FC<Section1Props> = ({
 			}
 		}
 		
-		if (mode === EditMode.Selection) {
-			setSelectedHitObjects((selectedHitObjects) => {
-				if (selectedHitObjects !== null) {
-					for (const hitObject of selectedHitObjects) {
-						totalSelectedHitObjects.add(hitObject);
-					}
-				}
-				
-				return totalSelectedHitObjects;
-			});
+		if (mode === EditMode.Selection && dragStartPosition !== null) {
+			setSelectedHitObjects(totalSelectedHitObjects);
 		}
-	}, [previewCanvasRefs, editCanvasRefs, laneWidth, laneHeight, timestamp, userOptions, mouseX, mouseY, changedBeatmap, mode, dragStartPosition]);
+	}, [
+		beatmap, previewCanvasRefs, editCanvasRefs, laneWidth, laneHeight, timestamp, userOptions, mouseX, mouseY, changedBeatmap, mode,
+		dragStartPosition, grabbedHitObject,
+	]);
+	
+	useEffect(() => {
+		const canvas = shortTimelineRef.current;
+		if (canvas === null || laneWidth === null || laneHeight === null) {
+			return;
+		}
+		
+		const context = shortTimelineContext.current;
+		if (context === null) {
+			shortTimelineContext.current = canvas.getContext('2d');
+			return;
+		}
+		
+		context.fillStyle = 'hsla(0, 0%, 0%, 0.5)';
+		context.clearRect(0, 0, canvas.width, canvas.height);
+		context.fillRect(0, 0, canvas.width, canvas.height);
+		
+		const currentY = yPositionFromMillisecondEditor(timestamp, timestamp, laneHeight, userOptions);
+		context.strokeStyle = 'hsla(80, 100%, 50%, 0.7)';
+		context.beginPath();
+		context.moveTo(0, currentY);
+		context.lineTo(canvas.width - 1, currentY);
+		context.closePath();
+		context.stroke();
+		
+		context.strokeStyle = 'hsl(0, 0%, 100%)';
+		context.beginPath();
+		
+		const currentDifficultyPoint = beatmap.controlPoints.difficultyPointAt(millisecondFromYPositionEditor(timestamp, laneHeight, laneHeight, userOptions));
+		const yPosition = yPositionFromMillisecondEditor(timestamp, currentDifficultyPoint.startTime, laneHeight, userOptions);
+		const x = currentDifficultyPoint.sliderVelocityUnlimited / 10 * laneWidth * 2;
+		context.lineTo(x, yPosition);
+		let currentPosition = [x, yPosition];
+		
+		for (const difficultyPoint of beatmap.controlPoints.difficultyPoints) {
+			if (difficultyPoint.startTime < timestamp - 1_000) {
+				continue;
+			}
+			
+			const yPosition = yPositionFromMillisecondEditor(timestamp, difficultyPoint.startTime, laneHeight, userOptions);
+			const x = difficultyPoint.sliderVelocityUnlimited / 10 * laneWidth * 2;
+			if (yPosition < 0) {
+				context.lineTo(currentPosition[0], yPosition);
+				context.moveTo(x, yPosition);
+				break;
+			}
+			
+			if (yPosition < laneHeight) {
+				context.lineTo(currentPosition[0], yPosition);
+				context.lineTo(x, yPosition);
+			}
+			
+			currentPosition = [x, yPosition];
+		}
+		
+		context.closePath();
+		context.stroke();
+	}, [beatmap, shortTimelineRef, shortTimelineContext, laneWidth, laneHeight, timestamp]);
+	
 	useEffect(() => {
 		const video = videoRef.current;
 		if (!video || isPlaying) {
@@ -648,29 +753,31 @@ const Section1: React.FC<Section1Props> = ({
 	}, [videoRef, isPlaying, timestamp]);
 	
 	useEffect(() => {
-		if (!sectionRef.current) {
+		const mainSection = mainSectionRef.current;
+		if (mainSection === null) {
 			return;
 		}
 		
 		console.log('Loaded HitObject editor for Mania:', beatmap);
 		
 		const observer = new ResizeObserver(() => {
-			if (!sectionRef.current) {
+			const mainSection = mainSectionRef.current;
+			if (mainSection === null) {
 				setLaneWidth(null);
 				setLaneHeight(null);
 				return;
 			}
 			
-			const boundingRect = sectionRef.current.getBoundingClientRect();
+			const boundingRect = mainSection.getBoundingClientRect();
 			const laneWidth = Math.round(boundingRect.width * userOptions.laneWidthPercent * 0.01) / keyCount;
 			const laneHeight = Math.round(boundingRect.height);
 			setLaneWidth(laneWidth);
 			setLaneHeight(laneHeight);
 		});
 		
-		observer.observe(sectionRef.current);
+		observer.observe(mainSection);
 		return () => observer.disconnect();
-	}, [sectionRef, userOptions]);
+	}, [mainSectionRef, userOptions]);
 	
 	useEffect(() => {
 		const music = musicRef.current;
@@ -681,9 +788,6 @@ const Section1: React.FC<Section1Props> = ({
 		
 		music.pause();
 		video?.pause();
-		if ('mediaSession' in navigator) {
-			navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'none';
-		}
 		
 		if (!isPlaying) {
 			return;
@@ -806,7 +910,6 @@ const Section1: React.FC<Section1Props> = ({
 					
 					const url = joinPaths(beatmap.songPath, entry.name);
 					const appliedHitSound = hitSounds[name as keyof typeof hitSounds];
-					
 					switch (appliedHitSound) {
 						case HitSound.Normal: {
 							setNormalUrl(convertFileSrc(url));
@@ -836,102 +939,110 @@ const Section1: React.FC<Section1Props> = ({
 	useEffect(() => {
 		const columnCount = beatmap.difficulty.circleSize;
 		const editCanvases = editCanvasRefs.current;
-		const section = sectionRef.current;
-		if (editCanvases.size !== columnCount || section === null) {
+		const mainSection = mainSectionRef.current;
+		if (editCanvases.size !== columnCount || mainSection === null) {
 			return;
 		}
 		
-		const onMouseEvent = (event: MouseEvent) => {
-			switch (event.button) {
-				case 0: {
-					switch (mode) {
-						case EditMode.HitObject: {
-							if (event.type !== 'mousedown') {
-								break;
-							}
-							
-							for (const [columnIndex, [laneCanvas]] of editCanvasRefs.current) {
-								if (event.target === laneCanvas) {
-									const { scrollSpeed, hitPosition, beatSnapDivisor } = userOptions;
-									
-									const laneRect = laneCanvas.getBoundingClientRect();
-									const laneHeight = laneRect.height;
-									const yPosition = event.clientY - laneRect.top;
-									let targetMillisecond = millisecondFromYPositionEditor(timestamp, yPosition, scrollSpeed, laneHeight, hitPosition);
-									
-									const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
-									const startingPoint = currentTimingPoint.startTime < timestamp ? currentTimingPoint.startTime : 0;
-									let beatStep = 60_000 / Math.max(currentTimingPoint.bpmUnlimited, 0) / beatSnapDivisor;
-									let lineIndex = 0;
-									
-									let closestTime = targetMillisecond;
-									let closestDistance = Infinity;
-									while (true) {
-										const lineTime = startingPoint + lineIndex * beatStep;
-										const yPosition = yPositionFromMillisecondEditor(timestamp, lineTime, scrollSpeed, laneHeight, hitPosition);
-										if (yPosition < -laneHeight) {
-											break;
-										}
-										
-										if (yPosition < laneHeight * 2) {
-											const distance = Math.abs(lineTime - targetMillisecond);
-											if (distance < closestDistance) {
-												closestTime = lineTime;
-												closestDistance = distance;
-											}
-										}
-										
-										lineIndex++;
-									}
-									
-									const hittableObject = new HittableObject();
-									hittableObject.hitType = HitType.Normal;
-									hittableObject.startTime = closestTime;
-									hittableObject.startX = columnIndex * 128 + 64;
-									hittableObject.startY = 192;
-									
-									beatmap.hitObjects.push(hittableObject);
-									beatmap.hitObjects.sort((a, b) => a.startTime - b.startTime);
-									console.log('added hitObject at', closestTime);
-									
-									setChangedBeatmap(crypto.randomUUID());
-									
-									break;
-								}
-							}
-							break;
-						}
-						case EditMode.Selection: {
-							if (event.type === 'mousedown') {
-								for (const [, [laneCanvas]] of editCanvasRefs.current) {
-									if (event.target === laneCanvas) {
-										const laneRect = laneCanvas.getBoundingClientRect();
-										const millisecond = millisecondFromYPositionEditor(
-											timestamp,
-											event.clientY - laneRect.top,
-											userOptions.scrollSpeed,
-											laneRect.height,
-											userOptions.hitPosition,
-										);
-										
-										setDragStartPosition([event.clientX, millisecond]);
-										setSelectedHitObjects(null);
-										
-										return;
-									}
-								}
-							}
-							
-							setDragStartPosition(null);
-							
-							break;
-						}
-					}
-					
+		const getClosestTime = (timestamp: number, targetMillisecond: number, laneHeight: number, userOptions: any) => {
+			const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
+			const startingPoint = Math.max(currentTimingPoint.startTime, 0);
+			const beatStep = 60_000 / Math.max(currentTimingPoint.bpmUnlimited, 0) / userOptions.beatSnapDivisor;
+			let closestTime = targetMillisecond;
+			let closestDistance = Infinity;
+			let lineIndex = 0;
+			while (true) {
+				const lineTime = startingPoint + lineIndex * beatStep;
+				const yPosition = yPositionFromMillisecondEditor(timestamp, lineTime, laneHeight, userOptions);
+				if (yPosition < -laneHeight) {
 					break;
 				}
-				case 2: {
-					break;
+				
+				const distance = Math.abs(lineTime - targetMillisecond);
+				if (distance < closestDistance) {
+					closestTime = lineTime;
+					closestDistance = distance;
+				}
+				
+				lineIndex++;
+			}
+		
+			return closestTime;
+		};
+		
+		const onMouseEvent = (event: MouseEvent) => {
+			if (event.type === 'mouseup') {
+				setGrabbedHitObject(null);
+				setDragStartPosition(null);
+				return;
+			}
+		
+			if (event.button !== 0) {
+				return;
+			}
+			
+			for (const [columnIndex, [laneCanvas]] of editCanvasRefs.current) {
+				if (event.target !== laneCanvas) {
+					continue;
+				}
+				
+				const laneRect = laneCanvas.getBoundingClientRect();
+				const laneHeight = laneRect.height;
+				const yPosition = event.clientY - laneRect.top;
+				const targetMillisecond = millisecondFromYPositionEditor(timestamp, yPosition, laneHeight, userOptions);
+				const closestTime = getClosestTime(timestamp, targetMillisecond, laneHeight, userOptions);
+				if (event.type === 'mousemove' && grabbedHitObject !== null) {
+					let changed = false;
+					
+					if (isNormalHitObject(grabbedHitObject) || (isLongHitObject(grabbedHitObject) && grabbedSide === 'head')) {
+						changed = grabbedHitObject.startTime !== closestTime;
+						grabbedHitObject.startTime = closestTime;
+					} else if (isLongHitObject(grabbedHitObject) && grabbedSide === 'tail') {
+						changed = grabbedHitObject.endTime !== closestTime;
+						grabbedHitObject.endTime = closestTime;
+					}
+					
+					if (changed) {
+						setChangedBeatmap(crypto.randomUUID());
+					}
+					
+					return;
+				}
+				
+				if (mode === EditMode.HitObject) {
+					if (hoveredHitObject !== null && event.type === 'mousedown') {
+						setGrabbedHitObject(hoveredHitObject);
+						setGrabbedSide(hoveredSide);
+						return;
+					}
+					
+					if (event.type === 'mousedown') {
+						const newHitObject = new HittableObject();
+						newHitObject.hitType = HitType.Normal;
+						newHitObject.startTime = closestTime;
+						newHitObject.startX = columnIndex * 128 + 64;
+						newHitObject.startY = 192;
+						
+						beatmap.hitObjects.push(newHitObject);
+						beatmap.hitObjects.sort((a, b) => a.startTime - b.startTime);
+						console.log('added hitObject at', closestTime);
+						
+						setChangedBeatmap(crypto.randomUUID());
+						
+						return;
+					}
+				} else if (mode === EditMode.Selection) {
+					if (event.type === 'mousemove') {
+						return;
+					}
+					
+					if (event.type === 'mousedown') {
+						setDragStartPosition([event.clientX, targetMillisecond]);
+						setSelectedHitObjects(null);
+						return;
+					}
+					
+					setDragStartPosition(null);
 				}
 			}
 		};
@@ -940,25 +1051,23 @@ const Section1: React.FC<Section1Props> = ({
 			event.preventDefault();
 		};
 		
-		section.addEventListener('mousedown', onMouseEvent);
-		section.addEventListener('mouseup', onMouseEvent);
-		section.addEventListener('contextmenu', onContextMenu);
+		mainSection.addEventListener('mousedown', onMouseEvent);
+		mainSection.addEventListener('mouseup', onMouseEvent);
+		mainSection.addEventListener('mousemove', onMouseEvent);
+		mainSection.addEventListener('contextmenu', onContextMenu);
 		
 		return () => {
-			section.removeEventListener('mousedown', onMouseEvent);
-			section.removeEventListener('mouseup', onMouseEvent);
-			section.removeEventListener('contextmenu', onContextMenu);
+			mainSection.removeEventListener('mousedown', onMouseEvent);
+			mainSection.removeEventListener('mouseup', onMouseEvent);
+			mainSection.removeEventListener('mousemove', onMouseEvent);
+			mainSection.removeEventListener('contextmenu', onContextMenu);
 		}
-	}, [editCanvasRefs, sectionRef, timestamp, userOptions.scrollSpeed, userOptions.hitPosition, userOptions.beatSnapDivisor, mode]);
+	}, [
+		editCanvasRefs, mainSectionRef, timestamp, userOptions.scrollSpeed, userOptions.hitPosition, userOptions.beatSnapDivisor, mode,
+		hoveredHitObject, hoveredSide, grabbedHitObject, grabbedSide,
+	]);
 	
 	useEffect(() => {
-		const columnCount = beatmap.difficulty.circleSize;
-		const editCanvases = editCanvasRefs.current;
-		const section = sectionRef.current;
-		if (editCanvases.size !== columnCount || section === null) {
-			return;
-		}
-		
 		const onMouseMove = (event: MouseEvent) => {
 			setMouseX(event.clientX);
 			setMouseY(event.clientY);
@@ -969,7 +1078,7 @@ const Section1: React.FC<Section1Props> = ({
 		return () => {
 			window.removeEventListener('mousemove', onMouseMove);
 		};
-	}, [editCanvasRefs, sectionRef]);
+	}, []);
 	
 	useEffect(() => {
 		setSelectedHitObjects(null);
@@ -1008,7 +1117,7 @@ const Section1: React.FC<Section1Props> = ({
 		<>
 			<div
 				className={'section s1'}
-				ref={sectionRef}
+				ref={mainSectionRef}
 				onWheel={(event) => {
 					const music = musicRef.current;
 					if (music === null) {
@@ -1089,9 +1198,8 @@ const Section1: React.FC<Section1Props> = ({
 								width={laneWidth ?? 1}
 								height={laneHeight ?? 1}
 								style={{
-									width: `${laneWidth}px`,
-									height: `${laneHeight}px`,
-									cursor: mode === EditMode.Selection ? 'crosshair' : mode === EditMode.Delete ? 'default' : 'cell',
+									width: `${laneWidth ?? 1}px`,
+									height: `${laneHeight ?? 1}px`,
 								}}
 								ref={(element) => {
 									editCanvasRefs.current.delete(i);
@@ -1112,6 +1220,18 @@ const Section1: React.FC<Section1Props> = ({
 							/>
 						);
 					})}
+				</div>
+				<div className={'shortTimelineContainer'}>
+					<canvas
+						className={'shortTimeline'}
+						width={(laneWidth ?? 1) * 2}
+						height={laneHeight ?? 1}
+						style={{
+							width: `${(laneWidth ?? 1) * 2}px`,
+							height: `${laneHeight ?? 1}px`,
+						}}
+						ref={shortTimelineRef}
+					/>
 				</div>
 				<div className={'modeSelector'}>
 					<button

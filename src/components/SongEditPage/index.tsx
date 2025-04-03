@@ -20,7 +20,7 @@ const Topbar: React.FC<TopbarProps> = ({ beatmapPath }) => {
 		<div className={'topbar'}>
 			<div className={'buttons'}>
 				<DropdownContainer label={'File'} openTo={'south'}>
-					<DropdownItem action={() => {}}>Save... [ctrl+s]</DropdownItem>
+					<DropdownItem action={() => {}}>Save [ctrl+s]</DropdownItem>
 					<DropdownItem action={() => {}}>Save as... [ctrl+shift+s]</DropdownItem>
 					<DropdownItem
 						action={() => {

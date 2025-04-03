@@ -18,6 +18,19 @@
 			height: fit-content;
 			resize: none;
 			flex-grow: 1;
+			outline: none;
+			padding: 5px;
+			border-radius: 5px;
+			background-color: hsl(0, 0%, 26%);
+			outline: none;
+			border: 2px solid hsl(0, 0%, 36%);
+			color: hsl(0, 0%, 100%);
+			transition: background-color 100ms, border-color 100ms;
+			
+			&:focus {
+				border-color: hsl(0, 0%, 40%);
+				background-color: hsl(0, 0%, 30%);
+			}
 		}
 	}
 	
