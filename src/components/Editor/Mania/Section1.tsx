@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { exists, readDir } from '@tauri-apps/plugin-fs';
 import { DifficultyPoint, HitObject, HitSound, HitType, TimingPoint } from 'osu-classes';
-import { HoldableObject, HittableObject } from 'osu-parsers';
+import { HoldableObject } from 'osu-parsers';
 
 import { useEditor } from '../Provider';
 
 import { clamp, intToBits } from '@/utils';
-import { yPositionFromMillisecond, yPositionFromMillisecondEditor, OsuBeatmap, useHitsound, millisecondFromYPositionEditor, isLongHitObject, isNormalHitObject } from '@/utils/Beatmap';
+import { yPositionFromMillisecond, yPositionFromMillisecondEditor, OsuBeatmap, useHitsound, millisecondFromYPositionEditor, isLongHitObject, isNormalHitObject, getClosestTime, addHitObject } from '@/utils/Beatmap';
 import { getExtension, getFileName, joinPaths } from '@/utils/File';
 import { EditMode, ReactSet, UserOptions } from '@/utils/Types';
 
@@ -567,6 +567,100 @@ const Section1: React.FC = () => {
 	const previewCanvasRefs = useRef<Map<number, [HTMLCanvasElement, CanvasRenderingContext2D, OffscreenCanvas, OffscreenCanvasRenderingContext2D]>>(new Map());
 	const keyCount = beatmap.difficulty.circleSize;
 	
+	const onMouseEvent = useCallback((event: MouseEvent) => {
+		if (event.type === 'mousemove') {
+			setMouseX(event.clientX);
+			setMouseY(event.clientY);
+		} else if (event.type === 'mouseup') {
+			setGrabbedHitObject(null);
+			setDragStartPosition(null);
+			return;
+		}
+		
+		if (event.button !== 0) {
+			return;
+		}
+		
+		for (const [columnIndex, [laneCanvas]] of editCanvasRefs.current) {
+			if (event.target !== laneCanvas) {
+				continue;
+			}
+			
+			const laneRect = laneCanvas.getBoundingClientRect();
+			const laneHeight = laneRect.height;
+			const yPosition = event.clientY - laneRect.top;
+			const targetMillisecond = millisecondFromYPositionEditor(timestamp, yPosition, laneHeight, userOptions);
+			const closestTime = getClosestTime(beatmap, timestamp, targetMillisecond, laneHeight, userOptions);
+			if (event.type === 'mousemove' && grabbedHitObject !== null) {
+				let changed = false;
+				if (isNormalHitObject(grabbedHitObject) || (isLongHitObject(grabbedHitObject) && grabbedSide === 'head')) {
+					changed = grabbedHitObject.startTime !== closestTime;
+					grabbedHitObject.startTime = closestTime;
+				} else if (isLongHitObject(grabbedHitObject) && grabbedSide === 'tail') {
+					changed = grabbedHitObject.endTime !== closestTime;
+					grabbedHitObject.endTime = closestTime;
+				}
+				
+				if (changed) {
+					setChangedBeatmap(crypto.randomUUID());
+				}
+				
+				return;
+			}
+			
+			const columnCount = beatmap.difficulty.circleSize;
+			if (mode === EditMode.HitObject) {
+				if (event.type !== 'mousedown') {
+					return;
+				}
+				
+				if (hoveredHitObject !== null) {
+					setGrabbedHitObject(hoveredHitObject);
+					setGrabbedSide(hoveredSide);
+				} else {
+					addHitObject(beatmap, columnIndex, columnCount, closestTime);
+					setChangedBeatmap(crypto.randomUUID());
+				}
+			} else if (mode === EditMode.Selection) {
+				if (event.type === 'mousemove') {
+					return;
+				}
+				
+				if (event.type === 'mousedown') {
+					setDragStartPosition([event.clientX, targetMillisecond]);
+					setSelectedHitObjects(null);
+				} else {
+					setDragStartPosition(null);
+				}
+			}
+		}
+	}, [timestamp, beatmap, userOptions, mode, hoveredHitObject, grabbedHitObject]);
+	
+	const onContextMenu = useCallback((event: MouseEvent) => {
+		event.preventDefault();
+	}, []);
+	
+	const keyPressListener = useCallback((event: KeyboardEvent) => {
+		switch (event.code) {
+			case 'Digit1': {
+				setMode(EditMode.Selection);
+				break;
+			}
+			case 'Digit2': {
+				setMode(EditMode.HitObject);
+				break;
+			}
+			case 'Digit3': {
+				setMode(EditMode.Delete);
+				break;
+			}
+			case 'Escape': {
+				setSelectedHitObjects(null);
+				break;
+			}
+		}
+	}, []);
+	
 	useEffect(() => {
 		const previewCanvases = previewCanvasRefs.current; // TIL plural of canvas is canvases, its so stupid
 		const editCanvases = editCanvasRefs.current;
@@ -940,116 +1034,9 @@ const Section1: React.FC = () => {
 		const columnCount = beatmap.difficulty.circleSize;
 		const editCanvases = editCanvasRefs.current;
 		const mainSection = mainSectionRef.current;
-		if (editCanvases.size !== columnCount || mainSection === null) {
+		if (mainSection === null || editCanvases.size !== columnCount) {
 			return;
 		}
-		
-		const getClosestTime = (timestamp: number, targetMillisecond: number, laneHeight: number, userOptions: any) => {
-			const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
-			const startingPoint = Math.max(currentTimingPoint.startTime, 0);
-			const beatStep = 60_000 / Math.max(currentTimingPoint.bpmUnlimited, 0) / userOptions.beatSnapDivisor;
-			let closestTime = targetMillisecond;
-			let closestDistance = Infinity;
-			let lineIndex = 0;
-			while (true) {
-				const lineTime = startingPoint + lineIndex * beatStep;
-				const yPosition = yPositionFromMillisecondEditor(timestamp, lineTime, laneHeight, userOptions);
-				if (yPosition < -laneHeight) {
-					break;
-				}
-				
-				const distance = Math.abs(lineTime - targetMillisecond);
-				if (distance < closestDistance) {
-					closestTime = lineTime;
-					closestDistance = distance;
-				}
-				
-				lineIndex++;
-			}
-		
-			return closestTime;
-		};
-		
-		const onMouseEvent = (event: MouseEvent) => {
-			if (event.type === 'mouseup') {
-				setGrabbedHitObject(null);
-				setDragStartPosition(null);
-				return;
-			}
-		
-			if (event.button !== 0) {
-				return;
-			}
-			
-			for (const [columnIndex, [laneCanvas]] of editCanvasRefs.current) {
-				if (event.target !== laneCanvas) {
-					continue;
-				}
-				
-				const laneRect = laneCanvas.getBoundingClientRect();
-				const laneHeight = laneRect.height;
-				const yPosition = event.clientY - laneRect.top;
-				const targetMillisecond = millisecondFromYPositionEditor(timestamp, yPosition, laneHeight, userOptions);
-				const closestTime = getClosestTime(timestamp, targetMillisecond, laneHeight, userOptions);
-				if (event.type === 'mousemove' && grabbedHitObject !== null) {
-					let changed = false;
-					
-					if (isNormalHitObject(grabbedHitObject) || (isLongHitObject(grabbedHitObject) && grabbedSide === 'head')) {
-						changed = grabbedHitObject.startTime !== closestTime;
-						grabbedHitObject.startTime = closestTime;
-					} else if (isLongHitObject(grabbedHitObject) && grabbedSide === 'tail') {
-						changed = grabbedHitObject.endTime !== closestTime;
-						grabbedHitObject.endTime = closestTime;
-					}
-					
-					if (changed) {
-						setChangedBeatmap(crypto.randomUUID());
-					}
-					
-					return;
-				}
-				
-				if (mode === EditMode.HitObject) {
-					if (hoveredHitObject !== null && event.type === 'mousedown') {
-						setGrabbedHitObject(hoveredHitObject);
-						setGrabbedSide(hoveredSide);
-						return;
-					}
-					
-					if (event.type === 'mousedown') {
-						const newHitObject = new HittableObject();
-						newHitObject.hitType = HitType.Normal;
-						newHitObject.startTime = closestTime;
-						newHitObject.startX = columnIndex * 128 + 64;
-						newHitObject.startY = 192;
-						
-						beatmap.hitObjects.push(newHitObject);
-						beatmap.hitObjects.sort((a, b) => a.startTime - b.startTime);
-						console.log('added hitObject at', closestTime);
-						
-						setChangedBeatmap(crypto.randomUUID());
-						
-						return;
-					}
-				} else if (mode === EditMode.Selection) {
-					if (event.type === 'mousemove') {
-						return;
-					}
-					
-					if (event.type === 'mousedown') {
-						setDragStartPosition([event.clientX, targetMillisecond]);
-						setSelectedHitObjects(null);
-						return;
-					}
-					
-					setDragStartPosition(null);
-				}
-			}
-		};
-		
-		const onContextMenu = (event: MouseEvent) => {
-			event.preventDefault();
-		};
 		
 		mainSection.addEventListener('mousedown', onMouseEvent);
 		mainSection.addEventListener('mouseup', onMouseEvent);
@@ -1062,23 +1049,7 @@ const Section1: React.FC = () => {
 			mainSection.removeEventListener('mousemove', onMouseEvent);
 			mainSection.removeEventListener('contextmenu', onContextMenu);
 		}
-	}, [
-		editCanvasRefs, mainSectionRef, timestamp, userOptions.scrollSpeed, userOptions.hitPosition, userOptions.beatSnapDivisor, mode,
-		hoveredHitObject, hoveredSide, grabbedHitObject, grabbedSide,
-	]);
-	
-	useEffect(() => {
-		const onMouseMove = (event: MouseEvent) => {
-			setMouseX(event.clientX);
-			setMouseY(event.clientY);
-		};
-		
-		window.addEventListener('mousemove', onMouseMove);
-		
-		return () => {
-			window.removeEventListener('mousemove', onMouseMove);
-		};
-	}, []);
+	}, [onMouseEvent, onContextMenu]);
 	
 	useEffect(() => {
 		setSelectedHitObjects(null);
@@ -1086,32 +1057,12 @@ const Section1: React.FC = () => {
 	}, [mode]);
 	
 	useEffect(() => {
-		const keyPressListener = (event: KeyboardEvent) => {
-			switch (event.code) {
-				case 'Digit1': {
-					setMode(EditMode.Selection);
-					break;
-				}
-				case 'Digit2': {
-					setMode(EditMode.HitObject);
-					break;
-				}
-				case 'Digit3': {
-					setMode(EditMode.Delete);
-					break;
-				}
-				case 'Escape': {
-					setSelectedHitObjects(null);
-					break;
-				}
-			}
-		};
-		
 		window.addEventListener('keydown', keyPressListener);
+		
 		return () => {
 			window.removeEventListener('keydown', keyPressListener);
 		};
-	}, []);
+	}, [keyPressListener]);
 	
 	return (
 		<>

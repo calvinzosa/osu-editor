@@ -94,6 +94,44 @@ export function isLongHitObject(hitObject: HitObject): hitObject is OsuParsers.H
 	return (hitObject.hitType & HitType.Hold) !== 0;
 }
 
+export function getClosestTime(beatmap: OsuBeatmap, timestamp: number, targetMillisecond: number, laneHeight: number, userOptions: any) {
+	const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
+	const startingPoint = Math.max(currentTimingPoint.startTime, 0);
+	const beatStep = 60_000 / Math.max(currentTimingPoint.bpmUnlimited, 0) / userOptions.beatSnapDivisor;
+	let closestTime = targetMillisecond;
+	let closestDistance = Infinity;
+	let lineIndex = 0;
+	while (true) {
+		const lineTime = startingPoint + lineIndex * beatStep;
+		const yPosition = yPositionFromMillisecondEditor(timestamp, lineTime, laneHeight, userOptions);
+		if (yPosition < -laneHeight) {
+			break;
+		}
+		
+		const distance = Math.abs(lineTime - targetMillisecond);
+		if (distance < closestDistance) {
+			closestTime = lineTime;
+			closestDistance = distance;
+		}
+		
+		lineIndex++;
+	}
+
+	return closestTime;
+}
+
+export function addHitObject(beatmap: OsuBeatmap, columnIndex: number, columnCount: number, targetMillisecond: number) {
+	const newHitObject = new OsuParsers.HittableObject();
+	newHitObject.hitType = HitType.Normal;
+	newHitObject.startTime = targetMillisecond;
+	newHitObject.startX = (512 * columnIndex) / columnCount;
+	newHitObject.startY = 192;
+	
+	beatmap.hitObjects.push(newHitObject);
+	beatmap.hitObjects.sort((a, b) => a.startTime - b.startTime);
+	console.log('added hitObject at', targetMillisecond);
+}
+
 export function calculateActualNoteSpeed(scrollSpeed: number, bpm: number, sliderVelocity: number): number {
 	const bps = bpm / 60;
 	const totalScrollSpeed = sliderVelocity * scrollSpeed;
