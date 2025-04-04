@@ -13,12 +13,19 @@ const Section4: React.FC = () => {
 			return;
 		}
 		
+		const fpsValues = new Array<number>();
+		
 		let shouldUpdate = true;
 		let lastTimestamp: DOMHighResTimeStamp | null = null;
 		const update: FrameRequestCallback = (timestamp) => {
 			if (lastTimestamp !== null && fpsLabel) {
 				const dt = timestamp - lastTimestamp;
-				fpsLabel.innerText = `FPS: ${(1_000 / dt).toFixed(2)}`;
+				fpsValues.push(1_000 / dt);
+				if (fpsValues.length > 30) {
+					fpsValues.splice(0, 1);
+				}
+				
+				fpsLabel.innerText = `FPS: ${(fpsValues.reduce((total, n) => total + n, 0) / fpsValues.length).toFixed(2)}`;
 			}
 			
 			if (shouldUpdate) {

@@ -6,8 +6,6 @@ import { GameMode, OsuBeatmap } from '@/utils/Beatmap';
 import EditorProvider from './Provider';
 import ManiaEditor from './Mania';
 
-import LoadingGif from '@/assets/loading.gif';
-
 interface EditorProps {
 	beatmap: OsuBeatmap | null;
 }
@@ -17,7 +15,7 @@ const Editor: React.FC<EditorProps> = ({ beatmap }) => {
 		return (
 			<div className={'loadingBeatmap'}>
 				<h2>Loading beatmap...</h2>
-				<img className={'loadingGif'} src={LoadingGif} />
+				<div className={'loadingGif'} />
 			</div>
 		);
 	}

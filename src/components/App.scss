@@ -1,16 +1,11 @@
 @font-face {
 	font-family: 'Torus';
-	src: url("../assets/Torus - Regular.ttf");
-}
-
-@font-face {
-	font-family: 'Torus Bold';
-	src: url("../assets/Torus - Bold.ttf");
+	src: url("../assets/fonts/Torus - Regular.ttf") format("truetype");
 }
 
 @font-face {
 	font-family: 'JetBrains Mono';
-	src: url("../assets/JetBrains Mono.ttf");
+	src: url("../assets/fonts/JetBrains Mono.ttf") format("truetype");
 }
 
 body {
@@ -76,7 +71,7 @@ p[title] {
 }
 
 button, input {
-	font-family: 'Torus';
+	font-family: 'Torus', sans-serif;
 }
 
 button:not(.noStyle) {

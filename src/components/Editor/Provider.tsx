@@ -1,7 +1,7 @@
 import { createContext, memo, PropsWithChildren, useContext, useEffect, useRef, useState } from 'react';
 
 import { DefaultUserOptions, EditMode, ReactSet, UserOptions } from '@/utils/Types';
-import { OsuBeatmap } from '@/utils/Beatmap';
+import { AppliedHitData, OsuBeatmap } from '@/utils/Beatmap';
 import { Storage } from '@/utils/LocalStorage';
 
 interface RenderedHitObjects {
@@ -21,6 +21,8 @@ interface EditorContextType {
 	setUserOptions: ReactSet<UserOptions>;
 	renderedHitObjects: RenderedHitObjects;
 	setRenderedHitObjects: ReactSet<RenderedHitObjects>;
+	appliedHitData: AppliedHitData;
+	setAppliedHitData: ReactSet<AppliedHitData>;
 	musicRef: React.RefObject<HTMLAudioElement>;
 }
 
@@ -45,6 +47,7 @@ const EditorProvider: React.FC<EditorProviderProps> = ({ beatmap, children }) =>
 	const [timestamp, setTimestamp] = useState<number>(0);
 	const [userOptions, setUserOptions] = useState<UserOptions>(DefaultUserOptions);
 	const [renderedHitObjects, setRenderedHitObjects] = useState<RenderedHitObjects>({ normal: 0, long: 0 });
+	const [appliedHitData, setAppliedHitData] = useState<AppliedHitData>({ whistle: false, finish: false, clap: false});
 	
 	const musicRef = useRef<HTMLAudioElement>(null);
 	
@@ -68,6 +71,7 @@ const EditorProvider: React.FC<EditorProviderProps> = ({ beatmap, children }) =>
 				timestamp, setTimestamp,
 				userOptions, setUserOptions,
 				renderedHitObjects, setRenderedHitObjects,
+				appliedHitData, setAppliedHitData,
 				musicRef,
 			}}
 		>

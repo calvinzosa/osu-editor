@@ -58,9 +58,7 @@ const Section3: React.FC = () => {
 				</button>
 			</div>
 			<div className={'userOption'}>
-				<p title={'The hit position of the receptors'}>
-					HitPosition:&nbsp;{userOptions.hitPosition}/480
-				</p>
+				<p title={'The hit position of the receptors'}>HitPosition:&nbsp;{userOptions.hitPosition}/480</p>
 				<input
 					type={'range'}
 					min={0}

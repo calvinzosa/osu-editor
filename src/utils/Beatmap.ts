@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 
-
 import { readDir, readFile } from '@tauri-apps/plugin-fs';
 
 import * as OsuParsers from 'osu-parsers';
@@ -26,13 +25,23 @@ export interface OsuBeatmap extends ReturnType<typeof beatmapDecoder.decodeFromB
 	maxComboLazer: number;
 }
 
+export type OsuHitObject = OsuParsers.HittableObject | OsuParsers.HoldableObject;
+
+export interface AppliedHitData {
+	whistle: boolean;
+	finish: boolean;
+	clap: boolean;
+}
+
 export function useHitsound(normalUrl: string, clapUrl: string, finishUrl: string, whistleUrl: string) {
 	const audioContextRef = useRef<AudioContext | null>(null);
 	const buffersRef = useRef<{ [key in HitSound]?: AudioBuffer }>({});
 	const gainRef = useRef<GainNode | null>(null);
 	
 	const playHitsound = (gain: number, hitSound: HitSound) => {
-		if (!audioContextRef.current || !gainRef.current) return;
+		if (!audioContextRef.current || !gainRef.current) {
+			return;
+		}
 		
 		gainRef.current.gain.value = gain;
 		if (hitSound === HitSound.None) {
@@ -46,6 +55,7 @@ export function useHitsound(normalUrl: string, clapUrl: string, finishUrl: strin
 			
 			const buffer = buffersRef.current[sound];
 			if (buffer === undefined) {
+				console.log(`Could not find HitSound for "${HitSound[hitSound]}"`);
 				continue;
 			}
 			
@@ -56,24 +66,24 @@ export function useHitsound(normalUrl: string, clapUrl: string, finishUrl: strin
 		}
 	};
 	
-	useEffect(() => {
-		const loadSound = async (url: string, type: HitSound) => {
-			if (!audioContextRef.current) {
-				audioContextRef.current = new AudioContext();
-				gainRef.current = audioContextRef.current.createGain();
-				gainRef.current.connect(audioContextRef.current.destination);
-			}
-			
-			const response = await fetch(url);
-			const arrayBuffer = await response.arrayBuffer();
-			buffersRef.current[type] = await audioContextRef.current.decodeAudioData(arrayBuffer);
-		};
+	const loadSound = async (url: string, type: HitSound) => {
+		if (!audioContextRef.current) {
+			audioContextRef.current = new AudioContext();
+			gainRef.current = audioContextRef.current.createGain();
+			gainRef.current.connect(audioContextRef.current.destination);
+		}
 		
+		const response = await fetch(url);
+		const arrayBuffer = await response.arrayBuffer();
+		buffersRef.current[type] = await audioContextRef.current.decodeAudioData(arrayBuffer);
+	};
+	
+	useEffect(() => {
 		loadSound(normalUrl, HitSound.Normal);
 		loadSound(clapUrl, HitSound.Clap);
 		loadSound(finishUrl, HitSound.Finish);
 		loadSound(whistleUrl, HitSound.Whistle);
-	}, [normalUrl, clapUrl, finishUrl, whistleUrl]);
+	}, [normalUrl, clapUrl, finishUrl, whistleUrl, loadSound]);
 	
 	return playHitsound;
 }
@@ -86,15 +96,15 @@ export function isDifficultyPoint(controlPoint: ControlPoint): controlPoint is D
 	return controlPoint.pointType === ControlPointType.DifficultyPoint;
 }
 
-export function isNormalHitObject(hitObject: HitObject): boolean {
+export function isNormalHitObject(hitObject: OsuHitObject | HitObject): hitObject is OsuParsers.HittableObject {
 	return (hitObject.hitType & HitType.Normal) !== 0;
 }
 
-export function isLongHitObject(hitObject: HitObject): hitObject is OsuParsers.HoldableObject {
+export function isLongHitObject(hitObject: OsuHitObject | HitObject): hitObject is OsuParsers.HoldableObject {
 	return (hitObject.hitType & HitType.Hold) !== 0;
 }
 
-export function getClosestTime(beatmap: OsuBeatmap, timestamp: number, targetMillisecond: number, laneHeight: number, userOptions: any) {
+export function getClosestTime(beatmap: OsuBeatmap, timestamp: number, targetMillisecond: number, laneHeight: number, userOptions: UserOptions) {
 	const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
 	const startingPoint = Math.max(currentTimingPoint.startTime, 0);
 	const beatStep = 60_000 / Math.max(currentTimingPoint.bpmUnlimited, 0) / userOptions.beatSnapDivisor;
@@ -116,20 +126,29 @@ export function getClosestTime(beatmap: OsuBeatmap, timestamp: number, targetMil
 		
 		lineIndex++;
 	}
-
+	
 	return Math.round(closestTime);
 }
 
-export function addHitObject(beatmap: OsuBeatmap, columnIndex: number, columnCount: number, targetMillisecond: number) {
+export function hitSoundFromHitData(appliedHitData: AppliedHitData) {
+	return (appliedHitData.whistle ? HitSound.Whistle : 0)
+		| (appliedHitData.finish ? HitSound.Finish : 0)
+		| (appliedHitData.clap ? HitSound.Clap : 0);
+}
+
+export function addHitObject(beatmap: OsuBeatmap, columnIndex: number, columnCount: number, targetMillisecond: number, hitData: AppliedHitData) {
 	const newHitObject = new OsuParsers.HittableObject();
 	newHitObject.hitType = HitType.Normal;
 	newHitObject.startTime = Math.round(targetMillisecond);
 	newHitObject.startX = (512 * columnIndex) / columnCount;
 	newHitObject.startY = 192;
+	newHitObject.hitSound = hitSoundFromHitData(hitData);
 	
 	beatmap.hitObjects.push(newHitObject);
 	beatmap.hitObjects.sort((a, b) => a.startTime - b.startTime);
 	console.log('added hitObject at', Math.round(targetMillisecond));
+	
+	return newHitObject;
 }
 
 export function calculateActualNoteSpeed(scrollSpeed: number, bpm: number, sliderVelocity: number): number {
@@ -147,12 +166,13 @@ export function yPositionFromMillisecond(
 	bpm: number,
 	sliderVelocity: number,
 	laneHeight: number,
-	{ hitPosition, scrollSpeed }: UserOptions,
+	userOptions: UserOptions,
 	nextTimings: Array<TimingPoint>,
 	nextDifficulties: Array<DifficultyPoint>,
 ): number {
+	const { hitPosition, scrollSpeed } = userOptions;
 	const movementHeight = laneHeight * (hitPosition / 480);
-	let remainingTime = Math.round(targetMillisecond - timestamp);
+	let remainingTime = targetMillisecond - timestamp;
 	let distanceTravelled = 0;
 	let nextTimingPointIndex = 0;
 	let nextDifficultyPointIndex = 0;
@@ -171,7 +191,6 @@ export function yPositionFromMillisecond(
 		
 		const nextTime = nextPoint.startTime - timestamp;
 		distanceTravelled += nextTime * currentSpeed;
-		
 		if (distanceTravelled > movementHeight) {
 			return movementHeight - distanceTravelled;
 		}

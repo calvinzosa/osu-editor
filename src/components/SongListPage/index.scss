@@ -148,10 +148,10 @@ main.beatmapListPage {
 			
 			> .loadingGif {
 				background-color: hsl(212, 80%, 70%);
-				mask-image: url("@/assets/loading.gif");
+				margin: 0 auto;
+				mask-image: url("@/assets/images/loading.gif");
 				mask-size: cover;
 				filter: none;
-				margin: 0 auto;
 			}
 		}
 	}

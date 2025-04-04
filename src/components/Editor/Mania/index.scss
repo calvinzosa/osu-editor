@@ -38,7 +38,6 @@
 			margin-left: 6px;
 			display: flex;
 			z-index: 3;
-			backdrop-filter: blur(30px);
 		}
 		
 		> .imgBackground, > .videoBackground {
@@ -52,6 +51,50 @@
 		}
 		
 		> .modeSelector {
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			align-items: flex-start;
+			gap: 10px;
+			padding: 5px 0;
+			position: absolute;
+			left: 0;
+			top: 0;
+			bottom: 0;
+			width: 150px;
+			z-index: 3;
+			
+			> .mode {
+				display: flex;
+				flex-direction: column;
+				background-color: hsla(0, 0%, 0%, 0.5);
+				padding: 10px;
+				color: hsl(0, 0%, 100%);
+				border: 2px solid hsla(0, 0%, 80%, 0.5);
+				border-left: none;
+				border-radius: 0 10px 10px 0;
+				width: 120px;
+				transition: width 250ms cubic-bezier(0.175, 0.885, 0.1, 1.5);
+				outline: none;
+				
+				> .icon {
+					height: 100px;
+					opacity: 0.3;
+					object-fit: contain;
+					transition: opacity 125ms linear;
+				}
+				
+				&.selected {
+					width: 150px;
+					
+					> .icon {
+						opacity: 1;
+					}
+				}
+			}
+		}
+		
+		> .hitDataSelector {
 			display: flex;
 			flex-direction: column;
 			justify-content: center;

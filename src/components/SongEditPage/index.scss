@@ -48,4 +48,12 @@ main.beatmapEditPage {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
+	
+	> .loadingGif {
+		background-color: hsl(212, 80%, 70%);
+		margin: 0 auto;
+		mask-image: url("@/assets/images/loading.gif");
+		mask-size: cover;
+		filter: none;
+	}
 }
