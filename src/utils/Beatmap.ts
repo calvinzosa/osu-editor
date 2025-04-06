@@ -7,6 +7,8 @@ import { TimingPoint, HitType, DifficultyPoint, HitSound, ControlPointType, Cont
 
 import type { ReactSet, UserOptions } from '@/utils/Types';
 import { getExtension, joinPaths } from '@/utils/File';
+import { clamp } from '.';
+import { immerable } from 'immer';
 
 export const beatmapDecoder = new OsuParsers.BeatmapDecoder();
 
@@ -18,11 +20,13 @@ export enum GameMode {
 }
 
 export interface OsuBeatmap extends ReturnType<typeof beatmapDecoder.decodeFromBuffer> {
+	hitObjects: Array<OsuHitObject>;
 	tempId: ReturnType<Crypto['randomUUID']>;
 	filePath: string;
 	songPath: string;
 	maxComboStable: number;
 	maxComboLazer: number;
+	[immerable]: true;
 }
 
 export type OsuHitObject = OsuParsers.HittableObject | OsuParsers.HoldableObject;
@@ -104,6 +108,10 @@ export function isLongHitObject(hitObject: OsuHitObject | HitObject): hitObject 
 	return (hitObject.hitType & HitType.Hold) !== 0;
 }
 
+export function bpmToBeatLength(beatLength: number): number {
+	return 60_000 / beatLength;
+}
+
 export function getClosestTime(beatmap: OsuBeatmap, timestamp: number, targetMillisecond: number, laneHeight: number, userOptions: UserOptions) {
 	const currentTimingPoint = beatmap.controlPoints.timingPointAt(timestamp);
 	const startingPoint = Math.max(currentTimingPoint.startTime, 0);
@@ -136,16 +144,32 @@ export function hitSoundFromHitData(appliedHitData: AppliedHitData) {
 		| (appliedHitData.clap ? HitSound.Clap : 0);
 }
 
+export function startXToColumnIndex(xPosition: number, columnCount: number): number {
+	return clamp(Math.round(Math.floor(xPosition * columnCount / 512)), 0, columnCount - 1);
+}
+
+export function columnIndexToStartX(columnIndex: number, columnCount: number): number {
+	return (512 * columnIndex) / columnCount + 64;
+}
+
 export function addHitObject(beatmap: OsuBeatmap, columnIndex: number, columnCount: number, targetMillisecond: number, hitData: AppliedHitData) {
 	const newHitObject = new OsuParsers.HittableObject();
-	newHitObject.hitType = HitType.Normal;
-	newHitObject.startTime = Math.round(targetMillisecond);
-	newHitObject.startX = (512 * columnIndex) / columnCount;
-	newHitObject.startY = 192;
-	newHitObject.hitSound = hitSoundFromHitData(hitData);
+	Object.assign(newHitObject, {
+		hitType: HitType.Normal,
+		startTime: Math.round(targetMillisecond),
+		startX: (512 * columnIndex) / columnCount,
+		startY: 192,
+		hitSound: hitSoundFromHitData(hitData),
+		[immerable]: true,
+	});
 	
-	beatmap.hitObjects.push(newHitObject);
-	beatmap.hitObjects.sort((a, b) => a.startTime - b.startTime);
+	const atIndex = beatmap.hitObjects.findIndex((hitObject) => newHitObject.startTime - hitObject.startTime < 0);
+	if (atIndex === -1) {
+		beatmap.hitObjects.push(newHitObject);
+	} else {
+		beatmap.hitObjects.splice(atIndex, 0, newHitObject);
+	}
+	
 	console.log('added hitObject at', Math.round(targetMillisecond));
 	
 	return newHitObject;
@@ -208,15 +232,17 @@ export function yPositionFromMillisecond(
 	}
 }
 
-export function yPositionFromMillisecondEditor(timestamp: number, targetMillisecond: number, laneHeight: number, { hitPosition, scrollSpeed }: UserOptions) {
+export function yPositionFromMillisecondEditor(timestamp: number, targetMillisecond: number, laneHeight: number, userOptions: UserOptions) {
+	const { hitPosition, scrollSpeedEditor } = userOptions;
 	const movementHeight = laneHeight * (hitPosition / 480);
-	const currentSpeed = calculateActualNoteSpeed(scrollSpeed, 60, 1) * 2;
+	const currentSpeed = calculateActualNoteSpeed(scrollSpeedEditor, 60, 1);
 	return movementHeight - Math.round(targetMillisecond - timestamp) / 1_000 * currentSpeed;
 }
 
-export function millisecondFromYPositionEditor(timestamp: number, yPosition: number, laneHeight: number, { hitPosition, scrollSpeed }: UserOptions) {
-	const currentSpeed = calculateActualNoteSpeed(scrollSpeed, 60, 1);
-	return Math.round((1000 * ((laneHeight * hitPosition) / 480 - yPosition)) / (2 * currentSpeed) + timestamp);
+export function millisecondFromYPositionEditor(timestamp: number, yPosition: number, laneHeight: number, userOptions: UserOptions) {
+	const { hitPosition, scrollSpeedEditor } = userOptions;
+	const currentSpeed = calculateActualNoteSpeed(scrollSpeedEditor, 60, 1);
+	return Math.round((1000 * ((laneHeight * hitPosition) / 480 - yPosition)) / currentSpeed + timestamp);
 	// just moved around the equation from yPositionFromTimestampEditor to get this
 }
 
@@ -267,16 +293,21 @@ async function processSong(songPath: string, loadedSongs: Record<string, Array<O
 	
 	loadedSongs[songPath] = loadedDifficulties;
 	completed();
-};
+}
 
 export function initializeBeatmap(beatmap: OsuBeatmap, filePath: string, songPath: string) {
-	beatmap.tempId = crypto.randomUUID();
-	beatmap.filePath = filePath;
-	beatmap.songPath = songPath;
+	Object.assign(beatmap, {
+		tempId: crypto.randomUUID(),
+		filePath: filePath,
+		songPath: songPath,
+		[immerable]: true,
+	});
 	
 	let maxComboStable = 0;
 	let maxComboLazer = 0;
 	for (const hitObject of beatmap.hitObjects) {
+		Object.assign(hitObject, { [immerable]: true });
+		
 		const hitType = hitObject.hitType;
 		if ((hitType & HitType.Normal) !== 0) {
 			maxComboStable++;
